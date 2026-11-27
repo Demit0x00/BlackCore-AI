@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -95,9 +96,8 @@ class MainActivity:ComponentActivity(){
 }
 data class MarkdownPart(val text:String="",val code:String?=null,val language:String="")
 private fun splitFencedCode(input:String):List<MarkdownPart>{
- val regex=Regex("(?s)^```([^\n]*)\n(.*?)\n?```\s*$")
  val result=mutableListOf<MarkdownPart>();var cursor=0
- val fence=Regex("(?s)```([^\n]*)\n(.*?)\n?```")
+ val fence=Regex("(?s)```([^\\n]*)\\n(.*?)\\n?```")
  fence.findAll(input).forEach{m->if(m.range.first>cursor)result.add(MarkdownPart(text=input.substring(cursor,m.range.first)));result.add(MarkdownPart(code=m.groupValues[2],language=m.groupValues[1].trim()));cursor=m.range.last+1}
  if(cursor<input.length)result.add(MarkdownPart(text=input.substring(cursor)))
  if(result.isEmpty())result.add(MarkdownPart(text=input))
@@ -112,8 +112,16 @@ private fun splitFencedCode(input:String):List<MarkdownPart>{
 }
 private fun highlightCode(code:String):AnnotatedString{
  val keywords=setOf("fun","val","var","class","object","if","else","when","for","while","return","import","package","public","private","protected","static","void","int","String","const","let","function","def","async","await","try","catch","throw","new","true","false","null","None","this","super","extends","implements")
- val token=Regex(""""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|//[^\n]*|#[^\n]*|\b[A-Za-z_][A-Za-z0-9_]*\b|\b\d+(?:\.\d+)?\b""")
- return AnnotatedString.Builder().apply{var pos=0;token.findAll(code).forEach{m->append(code.substring(pos,m.range.first));val t=m.value;val color=when{t.startsWith("\\\"")||t.startsWith("'")->Color(0xFF9BE7A5);t.startsWith("//")||t.startsWith("#")->Color(0xFF7E8B98);t.firstOrNull()?.isDigit()==true->Color(0xFFFFC66D);t in keywords->Color(0xFF70B9FF);else->Color(0xFFE6EDF3)};pushStyle(SpanStyle(color=color,fontWeight=if(t in keywords)FontWeight.Bold else FontWeight.Normal));append(t);pop();pos=m.range.last+1};append(code.substring(pos)}.toAnnotatedString()
+ val token=Regex("\\\\b[A-Za-z_][A-Za-z0-9_]*\\\\b|\\\\b\\\\d+\\\\b")
+ return buildAnnotatedString {
+  var pos=0
+  token.findAll(code).forEach { m ->
+   append(code.substring(pos,m.range.first)); val t=m.value
+   val color=when { t.firstOrNull()?.isDigit()==true -> Color(0xFFFFC66D); t in keywords -> Color(0xFF70B9FF); else -> Color(0xFFE6EDF3) }
+   pushStyle(SpanStyle(color=color,fontWeight=if(t in keywords)FontWeight.Bold else FontWeight.Normal)); append(t); pop(); pos=m.range.last+1
+  }
+  append(code.substring(pos))
+ }
 }
 @Composable fun SettingsDialog(config:AIConfig,onSave:(AIConfig)->Unit,onDismiss:()->Unit){var url by remember{mutableStateOf(config.endpoint)};var key by remember{mutableStateOf(config.apiKey)};var model by remember{mutableStateOf(config.model)};var prompt by remember{mutableStateOf(config.systemPrompt)}
  AlertDialog(onDismissRequest=onDismiss,title={Text("AI Settings")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){OutlinedTextField(url,{url=it},label={Text("Chat completions URL")},singleLine=true);OutlinedTextField(key,{key=it},label={Text("API key")},singleLine=true);OutlinedTextField(model,{model=it},label={Text("Model ID")},singleLine=true);OutlinedTextField(prompt,{prompt=it},label={Text("System prompt")},minLines=2);Text("Endpoint harus kompatibel dengan OpenAI Chat Completions.",style=MaterialTheme.typography.labelSmall,color=Gray)}},confirmButton={Button(onClick={onSave(AIConfig(url.trim(),key.trim(),model.trim(),prompt))}){Text("Save")}},dismissButton={TextButton(onClick=onDismiss){Text("Cancel")}})}
