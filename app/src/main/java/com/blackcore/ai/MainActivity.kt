@@ -5,6 +5,7 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -59,7 +60,7 @@ class MainActivity:ComponentActivity(){
     items(s.threads,key={it.id}){thread->
      val active=thread.id==s.activeThreadId
      Row(Modifier.fillMaxWidth().background(if(active)Card else Color.Transparent,RoundedCornerShape(12.dp)).padding(start=10.dp,end=4.dp,top=4.dp,bottom=4.dp),verticalAlignment=Alignment.CenterVertically){
-      Text(thread.title,modifier=Modifier.weight(1f).padding(vertical=8.dp).clickableSafe { vm.openThread(thread.id);scope.launch{drawer.close()} },maxLines=1,overflow=TextOverflow.Ellipsis,color=if(active)Cyan else Color.White,style=MaterialTheme.typography.bodyMedium)
+      Text(thread.title,modifier=Modifier.weight(1f).padding(vertical=8.dp).clickable { vm.openThread(thread.id);scope.launch{drawer.close()} },maxLines=1,overflow=TextOverflow.Ellipsis,color=if(active)Cyan else Color.White,style=MaterialTheme.typography.bodyMedium)
       IconButton(onClick={renameTarget=thread;renameText=thread.title}){Icon(Icons.Default.Edit,"Rename",tint=Gray,modifier=Modifier.size(18.dp))}
       IconButton(onClick={vm.deleteChat(thread.id)}){Icon(Icons.Default.Delete,"Delete",tint=Gray,modifier=Modifier.size(18.dp))}
      }
@@ -80,7 +81,6 @@ class MainActivity:ComponentActivity(){
  if(settings)SettingsDialog(s.config,{vm.saveConfig(it);settings=false},{settings=false})
  renameTarget?.let{target->AlertDialog(onDismissRequest={renameTarget=null},title={Text("Rename chat")},text={OutlinedTextField(renameText,{renameText=it},singleLine=true,label={Text("Conversation title")})},confirmButton={TextButton(onClick={vm.renameChat(target.id,renameText);renameTarget=null}){Text("Save")}},dismissButton={TextButton(onClick={renameTarget=null}){Text("Cancel")}})}
 }
-private fun Modifier.clickableSafe(onClick:()->Unit):Modifier=androidx.compose.foundation.clickable(onClick=onClick)
 @Composable fun Welcome(onPrompt:(String)->Unit){Column(Modifier.fillMaxSize().padding(24.dp),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Icon(Icons.Default.SmartToy,null,tint=Cyan,modifier=Modifier.size(64.dp));Text("BlackCore AI",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold);Text("Your personal AI workspace.",color=Gray);Spacer(Modifier.height(24.dp));listOf("Jelaskan konsep yang sulit","Bantu saya menulis kode","Buat rencana belajar").forEach{prompt->OutlinedButton(onClick={onPrompt(prompt)},modifier=Modifier.fillMaxWidth().padding(vertical=4.dp)){Text(prompt)}}}}
 @Composable fun Bubble(m:ChatMessage){val user=m.role=="user";Row(Modifier.fillMaxWidth(),horizontalArrangement=if(user)Arrangement.End else Arrangement.Start){Column(Modifier.widthIn(max=340.dp).background(if(user)Color(0xFF123340) else Card,RoundedCornerShape(18.dp)).padding(14.dp)){Row(verticalAlignment=Alignment.CenterVertically){Icon(if(user)Icons.Default.Person else Icons.Default.SmartToy,null,tint=Cyan,modifier=Modifier.size(16.dp));Spacer(Modifier.width(6.dp));Text(if(user)"You" else "BlackCore",style=MaterialTheme.typography.labelMedium,color=Cyan)};Spacer(Modifier.height(6.dp));if(user)SelectionContainer { Text(m.content,color=Color.White) } else MarkdownContent(m.content)}}}
 @Composable fun MarkdownContent(markdown:String){
@@ -112,8 +112,8 @@ private fun splitFencedCode(input:String):List<MarkdownPart>{
 }
 private fun highlightCode(code:String):AnnotatedString{
  val keywords=setOf("fun","val","var","class","object","if","else","when","for","while","return","import","package","public","private","protected","static","void","int","String","const","let","function","def","async","await","try","catch","throw","new","true","false","null","None","this","super","extends","implements")
- val token=Regex(""""[\s\S]*?"""|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|//[^\n]*|#[^\n]*|\b[A-Za-z_][A-Za-z0-9_]*\b|\b\d+(?:\.\d+)?\b")
- return AnnotatedString.Builder().apply{var pos=0;token.findAll(code).forEach{m->append(code.substring(pos,m.range.first));val t=m.value;val color=when{t.startsWith(""")||t.startsWith("'")->Color(0xFF9BE7A5);t.startsWith("//")||t.startsWith("#")->Color(0xFF7E8B98);t.firstOrNull()?.isDigit()==true->Color(0xFFFFC66D);t in keywords->Color(0xFF70B9FF);else->Color(0xFFE6EDF3)};pushStyle(SpanStyle(color=color,fontWeight=if(t in keywords)FontWeight.Bold else FontWeight.Normal));append(t);pop();pos=m.range.last+1};append(code.substring(pos)}.toAnnotatedString()
+ val token=Regex(""""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|//[^\n]*|#[^\n]*|\b[A-Za-z_][A-Za-z0-9_]*\b|\b\d+(?:\.\d+)?\b""")
+ return AnnotatedString.Builder().apply{var pos=0;token.findAll(code).forEach{m->append(code.substring(pos,m.range.first));val t=m.value;val color=when{t.startsWith("\\\"")||t.startsWith("'")->Color(0xFF9BE7A5);t.startsWith("//")||t.startsWith("#")->Color(0xFF7E8B98);t.firstOrNull()?.isDigit()==true->Color(0xFFFFC66D);t in keywords->Color(0xFF70B9FF);else->Color(0xFFE6EDF3)};pushStyle(SpanStyle(color=color,fontWeight=if(t in keywords)FontWeight.Bold else FontWeight.Normal));append(t);pop();pos=m.range.last+1};append(code.substring(pos)}.toAnnotatedString()
 }
 @Composable fun SettingsDialog(config:AIConfig,onSave:(AIConfig)->Unit,onDismiss:()->Unit){var url by remember{mutableStateOf(config.endpoint)};var key by remember{mutableStateOf(config.apiKey)};var model by remember{mutableStateOf(config.model)};var prompt by remember{mutableStateOf(config.systemPrompt)}
  AlertDialog(onDismissRequest=onDismiss,title={Text("AI Settings")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){OutlinedTextField(url,{url=it},label={Text("Chat completions URL")},singleLine=true);OutlinedTextField(key,{key=it},label={Text("API key")},singleLine=true);OutlinedTextField(model,{model=it},label={Text("Model ID")},singleLine=true);OutlinedTextField(prompt,{prompt=it},label={Text("System prompt")},minLines=2);Text("Endpoint harus kompatibel dengan OpenAI Chat Completions.",style=MaterialTheme.typography.labelSmall,color=Gray)}},confirmButton={Button(onClick={onSave(AIConfig(url.trim(),key.trim(),model.trim(),prompt))}){Text("Save")}},dismissButton={TextButton(onClick=onDismiss){Text("Cancel")}})}
