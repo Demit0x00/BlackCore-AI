@@ -108,6 +108,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if(prompt.isEmpty() || s.loading) return
         if(!s.configured) { _state.value=s.copy(error="Masukkan API key dan model melalui Settings terlebih dahulu."); return }
         if(s.activeThreadId.isBlank()) { createChat(); return }
+        stopping=false
         val threadId=s.activeThreadId
         val user=ChatMessage(role="user",content=prompt); val history=s.messages+user
         _state.value=s.copy(messages=history,input="",loading=true,error=null)
@@ -116,7 +117,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             if(dao.messageCount(threadId)==1) dao.renameThread(threadId,prompt.take(40),System.currentTimeMillis())
             dao.touchThread(threadId,System.currentTimeMillis())
             val aid=UUID.randomUUID().toString(); var partial=""
-            stopping=false
+            if(stopping) { if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false); return@launch }
             try {
                 val response=withContext(Dispatchers.IO) { stream(s.config,history) { text ->
                     partial=text
