@@ -143,6 +143,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val req=Request.Builder().url(c.endpoint).post(body.toRequestBody("application/json".toMediaType()))
             .header("Authorization","Bearer ${c.apiKey}").header("Accept","text/event-stream").build()
         val call=http.newCall(req); activeCall=call
+        if(stopping) call.cancel()
         call.execute().use { res ->
             if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw IllegalStateException("HTTP ${res.code}: ${msg.take(400)}") }
             val source=res.body?.source() ?: error("Empty response stream")
