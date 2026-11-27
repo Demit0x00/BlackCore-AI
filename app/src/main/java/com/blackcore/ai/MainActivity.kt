@@ -112,7 +112,7 @@ private fun splitFencedCode(input:String):List<MarkdownPart>{
 }
 private fun highlightCode(code:String):AnnotatedString{
  val keywords=setOf("fun","val","var","class","object","if","else","when","for","while","return","import","package","public","private","protected","static","void","int","String","const","let","function","def","async","await","try","catch","throw","new","true","false","null","None","this","super","extends","implements")
- val token=Regex("\\\\b[A-Za-z_][A-Za-z0-9_]*\\\\b|\\\\b\\\\d+\\\\b")
+ val token=Regex("\\b[A-Za-z_][A-Za-z0-9_]*\\b|\\b\\d+\\b")
  return buildAnnotatedString {
   var pos=0
   token.findAll(code).forEach { m ->
