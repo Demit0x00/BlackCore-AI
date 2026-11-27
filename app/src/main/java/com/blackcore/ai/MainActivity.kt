@@ -112,12 +112,12 @@ private fun splitFencedCode(input:String):List<MarkdownPart>{
 }
 private fun highlightCode(code:String):AnnotatedString{
  val keywords=setOf("fun","val","var","class","object","if","else","when","for","while","return","import","package","public","private","protected","static","void","int","String","const","let","function","def","async","await","try","catch","throw","new","true","false","null","None","this","super","extends","implements")
- val token=Regex("\\b[A-Za-z_][A-Za-z0-9_]*\\b|\\b\\d+\\b")
+ val token=Regex("""(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|//[^\n]*|#[^\n]*|\b[A-Za-z_][A-Za-z0-9_]*\b|\b\d+(?:\.\d+)?\b)""")
  return buildAnnotatedString {
   var pos=0
   token.findAll(code).forEach { m ->
    append(code.substring(pos,m.range.first)); val t=m.value
-   val color=when { t.firstOrNull()?.isDigit()==true -> Color(0xFFFFC66D); t in keywords -> Color(0xFF70B9FF); else -> Color(0xFFE6EDF3) }
+   val color=when { t.startsWith("\"") || t.startsWith("'") -> Color(0xFF9BE7A5); t.startsWith("//") || t.startsWith("#") -> Color(0xFF7E8B98); t.firstOrNull()?.isDigit()==true -> Color(0xFFFFC66D); t in keywords -> Color(0xFF70B9FF); else -> Color(0xFFE6EDF3) }
    pushStyle(SpanStyle(color=color,fontWeight=if(t in keywords)FontWeight.Bold else FontWeight.Normal)); append(t); pop(); pos=m.range.last+1
   }
   append(code.substring(pos))
