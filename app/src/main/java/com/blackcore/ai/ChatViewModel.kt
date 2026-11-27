@@ -81,12 +81,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun renameChat(id:String,title:String) { viewModelScope.launch { dao.renameThread(id,title.trim().ifBlank{"Percakapan"},System.currentTimeMillis()) } }
     fun deleteChat(id:String) {
         viewModelScope.launch {
-            dao.deleteMessages(id); dao.deleteThread(id)
-            if(_state.value.activeThreadId==id) {
-                _state.value=_state.value.copy(activeThreadId="",messages=emptyList(),input="",loading=false)
-                val other=_state.value.threads.firstOrNull{it.id!=id}
-                if(other!=null) openThread(other.id) else createChat()
+            val wasActive = _state.value.activeThreadId == id
+            if(wasActive) {
+                val now=System.currentTimeMillis()
+                val replacement=ChatThread(UUID.randomUUID().toString(),"Percakapan baru",now,now)
+                dao.insertThread(replacement)
+                openThread(replacement.id)
             }
+            dao.deleteMessages(id)
+            dao.deleteThread(id)
         }
     }
     fun setInput(v:String) { _state.value=_state.value.copy(input=v,error=null) }
