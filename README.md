@@ -1,29 +1,40 @@
 # BlackCore AI
 
-A native Android AI chat starter built with Kotlin and Jetpack Compose.
+Native Android AI chat built with Kotlin and Jetpack Compose.
 
-## Implemented
-- Dark Compose chat interface and prompt suggestions
-- OpenAI-compatible Chat Completions endpoint settings
-- Configurable API key, model ID, and system prompt
+## Features
+
+### Stage 1
+- Dark Compose chat UI with starter prompts
+- OpenAI-compatible chat completions endpoint settings
+- API key, model identifier, and system prompt configuration
 - Streaming responses using Server-Sent Events (SSE)
-- Local message persistence using Room
-- New chat action to clear the current conversation
+- Local persistence using Room
+
+### Stage 2
+- Multi-conversation history drawer
+- Create, switch, rename, and delete conversations
+- Room schema migration to preserve existing messages in a legacy conversation
+- Markdown rendering (headings, lists, links, tables, emphasis, inline code)
+- Fenced code blocks with language label, basic token coloring, text selection, and copy button
+- Stop-generation button; partial assistant output is retained when stopping
 
 ## Build
-Open in Android Studio (JDK 17, Android SDK 35), sync Gradle, and run the app on Android 8.0+.
+Open in Android Studio (JDK 17, Android SDK 35), sync Gradle, and run on Android 8.0+.
+
+GitHub Actions workflow `.github/workflows/android-build.yml` runs a debug APK assembly on pushes and pull requests to `main`.
 
 ## Setup
-Open Settings in the app and enter:
-- Endpoint URL (default: `https://api.openai.com/v1/chat/completions`)
+In the app Settings, configure:
+- Chat completions URL (default: `https://api.openai.com/v1/chat/completions`)
 - API key
 - Model identifier
-- Optional system prompt
+- System prompt (optional)
 
-The provider must support the OpenAI Chat Completions request format and streaming SSE.
+The endpoint must support the OpenAI Chat Completions format and SSE streaming.
 
-## Security notice
-This starter stores the API key in local SharedPreferences. It is not production-grade secret storage. Never commit real API keys. For a public release, use a secure backend proxy with server-side credentials.
+## Security
+This starter stores the API key in SharedPreferences. This is not production-grade secret storage. Never commit a real API key. For public distribution, use an authenticated backend proxy with server-side credentials.
 
-## Project status
-Initial source is committed. It has not yet been compiled or tested on a device; please run a Gradle build and validate provider compatibility before release.
+## Status
+Stage 2 source is committed. The CI build is configured but has not yet completed successfully in this session. Device testing and validation against the selected API provider are still required.
