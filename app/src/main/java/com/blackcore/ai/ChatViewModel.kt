@@ -11,6 +11,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -23,13 +24,19 @@ data class AIConfig(
 )
 data class ChatState(
     val messages: List<ChatMessage> = emptyList(), val input: String = "", val loading: Boolean = false,
-    val error: String? = null, val config: AIConfig = AIConfig(), val configured: Boolean = false, val model: String = ""
+    val error: String? = null, val config: AIConfig = AIConfig(), val configured: Boolean = false,
+    val model: String = "", val threads: List<ChatThread> = emptyList(), val activeThreadId: String = ""
 )
 
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("blackcore_settings", Context.MODE_PRIVATE)
     private val dao = BlackCoreDatabase.get(app).chatDao()
     private val http = OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(120, TimeUnit.SECONDS).build()
+    private var activeCall: Call? = null
+    private var activeJob: Job? = null
+    private var stopping = false
+    private var messageCollection: Job? = null
+
     private fun readConfig() = AIConfig(
         prefs.getString("endpoint", AIConfig().endpoint) ?: AIConfig().endpoint,
         prefs.getString("key", "") ?: "", prefs.getString("model", "") ?: "",
@@ -39,42 +46,100 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(ChatState(config=config, configured=config.apiKey.isNotBlank() && config.model.isNotBlank(), model=config.model))
     val state: StateFlow<ChatState> = _state.asStateFlow()
 
-    init { viewModelScope.launch { dao.observeMessages().collect { rows ->
-        if (!_state.value.loading) _state.value = _state.value.copy(messages=rows.map { ChatMessage(it.id,it.role,it.content) })
-    } } }
+    init {
+        viewModelScope.launch {
+            dao.observeThreads().collect { list ->
+                _state.value = _state.value.copy(threads=list)
+                if (_state.value.activeThreadId.isBlank()) {
+                    if (list.isNotEmpty()) openThread(list.first().id)
+                    else createChat()
+                }
+            }
+        }
+    }
+    private fun watchMessages(threadId: String) {
+        messageCollection?.cancel()
+        messageCollection = viewModelScope.launch {
+            dao.observeMessages(threadId).collect { rows ->
+                if (_state.value.activeThreadId == threadId && !_state.value.loading)
+                    _state.value = _state.value.copy(messages=rows.map { ChatMessage(it.id,it.role,it.content) })
+            }
+        }
+    }
+    fun openThread(id:String) {
+        if(_state.value.loading) stopGeneration()
+        _state.value=_state.value.copy(activeThreadId=id,messages=emptyList(),input="",error=null)
+        watchMessages(id)
+    }
+    fun createChat() {
+        viewModelScope.launch {
+            val now=System.currentTimeMillis(); val id=UUID.randomUUID().toString()
+            dao.insertThread(ChatThread(id,"Percakapan baru",now,now))
+            openThread(id)
+        }
+    }
+    fun renameChat(id:String,title:String) { viewModelScope.launch { dao.renameThread(id,title.trim().ifBlank{"Percakapan"},System.currentTimeMillis()) } }
+    fun deleteChat(id:String) {
+        viewModelScope.launch {
+            dao.deleteMessages(id); dao.deleteThread(id)
+            if(_state.value.activeThreadId==id) {
+                _state.value=_state.value.copy(activeThreadId="",messages=emptyList(),input="",loading=false)
+                val other=_state.value.threads.firstOrNull{it.id!=id}
+                if(other!=null) openThread(other.id) else createChat()
+            }
+        }
+    }
     fun setInput(v:String) { _state.value=_state.value.copy(input=v,error=null) }
     fun saveConfig(c:AIConfig) {
         prefs.edit().putString("endpoint",c.endpoint).putString("key",c.apiKey).putString("model",c.model).putString("system",c.systemPrompt).apply()
         _state.value=_state.value.copy(config=c,configured=c.apiKey.isNotBlank() && c.model.isNotBlank(),model=c.model,error=null)
     }
-    fun newChat() { viewModelScope.launch { dao.clear(); _state.value=_state.value.copy(messages=emptyList(),input="",error=null) } }
+    fun newChat() = createChat()
+    fun stopGeneration() {
+        stopping=true
+        activeCall?.cancel()
+        _state.value=_state.value.copy(loading=false)
+    }
     fun send() {
         val s=_state.value; val prompt=s.input.trim()
         if(prompt.isEmpty() || s.loading) return
         if(!s.configured) { _state.value=s.copy(error="Masukkan API key dan model melalui Settings terlebih dahulu."); return }
+        if(s.activeThreadId.isBlank()) { createChat(); return }
+        val threadId=s.activeThreadId
         val user=ChatMessage(role="user",content=prompt); val history=s.messages+user
         _state.value=s.copy(messages=history,input="",loading=true,error=null)
-        viewModelScope.launch {
-            dao.insert(StoredMessage(user.id,user.role,user.content,System.currentTimeMillis()))
-            val aid=UUID.randomUUID().toString()
+        activeJob=viewModelScope.launch {
+            dao.insert(StoredMessage(user.id,threadId,user.role,user.content,System.currentTimeMillis()))
+            if(dao.messageCount(threadId)==1) dao.renameThread(threadId,prompt.take(40),System.currentTimeMillis())
+            dao.touchThread(threadId,System.currentTimeMillis())
+            val aid=UUID.randomUUID().toString(); var partial=""
+            stopping=false
             try {
-                val response=withContext(Dispatchers.IO) { stream(s.config,history) { partial ->
-                    _state.value=_state.value.copy(messages=_state.value.messages.filterNot{it.id==aid}+ChatMessage(aid,"assistant",partial))
+                val response=withContext(Dispatchers.IO) { stream(s.config,history) { text ->
+                    partial=text
+                    if(_state.value.activeThreadId==threadId)
+                        _state.value=_state.value.copy(messages=_state.value.messages.filterNot{it.id==aid}+ChatMessage(aid,"assistant",text))
                 } }
-                if(response.isNotBlank()) dao.insert(StoredMessage(aid,"assistant",response,System.currentTimeMillis()))
-                _state.value=_state.value.copy(loading=false)
+                if(response.isNotBlank()) dao.insert(StoredMessage(aid,threadId,"assistant",response,System.currentTimeMillis()))
+                if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false)
             } catch(e:Exception) {
-                _state.value=_state.value.copy(loading=false,error=e.message ?: "Request error",messages=_state.value.messages.filterNot{it.id==aid})
-            }
+                if(stopping) {
+                    if(partial.isNotBlank()) dao.insert(StoredMessage(aid,threadId,"assistant",partial,System.currentTimeMillis()))
+                    if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false)
+                } else {
+                    if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false,error=e.message ?: "Request error",messages=_state.value.messages.filterNot{it.id==aid})
+                }
+            } finally { activeCall=null; stopping=false }
         }
     }
-    private fun stream(c:AIConfig, history:List<ChatMessage>, onChunk:(String)->Unit):String {
+    private fun stream(c:AIConfig,history:List<ChatMessage>,onChunk:(String)->Unit):String {
         val arr=JSONArray().put(JSONObject().put("role","system").put("content",c.systemPrompt))
         history.forEach { arr.put(JSONObject().put("role",it.role).put("content",it.content)) }
         val body=JSONObject().put("model",c.model).put("messages",arr).put("stream",true).toString()
         val req=Request.Builder().url(c.endpoint).post(body.toRequestBody("application/json".toMediaType()))
             .header("Authorization","Bearer ${c.apiKey}").header("Accept","text/event-stream").build()
-        http.newCall(req).execute().use { res ->
+        val call=http.newCall(req); activeCall=call
+        call.execute().use { res ->
             if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw IllegalStateException("HTTP ${res.code}: ${msg.take(400)}") }
             val source=res.body?.source() ?: error("Empty response stream")
             val text=StringBuilder()
