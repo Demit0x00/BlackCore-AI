@@ -2,13 +2,18 @@ package com.blackcore.ai
 
 import android.content.Context
 import androidx.room.*
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "chat_threads")
 data class ChatThread(@PrimaryKey val id: String, val title: String, val createdAt: Long, val updatedAt: Long)
 
 @Entity(tableName = "chat_messages", indices = [Index("threadId")])
-data class StoredMessage(@PrimaryKey val id: String, val threadId: String, val role: String, val content: String, val createdAt: Long)
+data class StoredMessage(
+    @PrimaryKey val id: String,
+    @ColumnInfo(defaultValue = "'legacy'") val threadId: String,
+    val role: String, val content: String, val createdAt: Long
+)
 
 @Dao
 interface ChatDao {
