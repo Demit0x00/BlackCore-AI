@@ -119,7 +119,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             if(dao.messageCount(threadId)==1) dao.renameThread(threadId,prompt.take(40),System.currentTimeMillis())
             dao.touchThread(threadId,System.currentTimeMillis())
             val aid=UUID.randomUUID().toString(); var partial=""
-            if(generation in stoppedGenerations) { if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false); return@launch }
+            if(generation in stoppedGenerations) { stoppedGenerations = stoppedGenerations - generation; if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false); return@launch }
             try {
                 val response=withContext(Dispatchers.IO) { stream(s.config,history,generation) { text ->
                     partial=text
@@ -135,7 +135,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     if(_state.value.activeThreadId==threadId && generation == generationCounter) _state.value=_state.value.copy(loading=false,error=e.message ?: "Request error",messages=_state.value.messages.filterNot{it.id==aid})
                 }
-            } finally { if(generation == generationCounter) activeCall=null }
+            } finally { stoppedGenerations = stoppedGenerations - generation; if(generation == generationCounter) activeCall=null }
         }
     }
     private fun stream(c:AIConfig,history:List<ChatMessage>,generation:Long,onChunk:(String)->Unit):String {
