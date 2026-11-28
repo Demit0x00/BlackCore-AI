@@ -35,10 +35,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = BlackCoreDatabase.get(app).chatDao()
     // Fail fast on connection stalls, but allow a reasonable first-token wait and bounded overall request time.
     private val http = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .callTimeout(100, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(180, TimeUnit.SECONDS)
+        .writeTimeout(45, TimeUnit.SECONDS)
+        .callTimeout(8, TimeUnit.MINUTES)
         .retryOnConnectionFailure(true)
         .build()
     @Volatile private var activeCall: Call? = null
