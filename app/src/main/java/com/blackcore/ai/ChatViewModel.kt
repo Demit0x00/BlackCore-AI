@@ -33,7 +33,14 @@ data class ChatState(
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("blackcore_settings", Context.MODE_PRIVATE)
     private val dao = BlackCoreDatabase.get(app).chatDao()
-    private val http = OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(120, TimeUnit.SECONDS).build()
+    // Fail fast on connection stalls, but allow a reasonable first-token wait and bounded overall request time.
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(100, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
     @Volatile private var activeCall: Call? = null
     private var activeJob: Job? = null
     @Volatile private var generationCounter = 0L
