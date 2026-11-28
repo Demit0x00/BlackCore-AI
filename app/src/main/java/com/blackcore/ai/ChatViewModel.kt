@@ -188,7 +188,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     if(partial.isNotBlank()) dao.insert(StoredMessage(aid,threadId,"assistant",partial,System.currentTimeMillis()))
                     if(_state.value.activeThreadId==threadId && generation == generationCounter) _state.value=_state.value.copy(loading=false)
                 } else {
-                    if(_state.value.activeThreadId==threadId && generation == generationCounter) _state.value=_state.value.copy(loading=false,error=e.message ?: "Request error",messages=_state.value.messages.filterNot{it.id==aid})
+                    if(_state.value.activeThreadId==threadId && generation == generationCounter) _state.value=_state.value.copy(loading=false,error=friendlyException(e),messages=_state.value.messages.filterNot{it.id==aid})
                 }
             } finally { stoppedGenerations.remove(generation); if(generation == generationCounter) activeCall=null }
         }
@@ -211,23 +211,41 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun friendlyHttpError(code: Int, body: String): String {
-        val json = try { JSONObject(body).optJSONObject("error") ?: JSONObject(body) } catch (_: Exception) { JSONObject() }
-        val rawMessage = json.optString("message", "").trim()
-        val errorCode = json.optString("code", "").lowercase()
-        val errorType = json.optString("type", "").lowercase()
+        val root = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
+        val json = root.optJSONObject("error") ?: root
+        val rawMessage = json.optString("message", json.optString("error_description", root.optString("message", ""))).trim()
+        val errorCode = json.optString("code", root.optString("code", "")).lowercase()
+        val errorType = json.optString("type", root.optString("type", "")).lowercase()
+        val combined = (rawMessage + " " + errorCode + " " + errorType).lowercase()
         return when {
-            code == 401 || errorCode.contains("invalid_api_key") || errorType.contains("authentication") ->
-                "API key tidak valid atau sudah dicabut. Buka Settings, periksa provider, lalu masukkan API key yang benar."
-            code == 403 -> "Akses API ditolak (403). Periksa izin, billing, dan apakah provider/key memiliki akses ke model ini."
-            code == 429 && (errorCode.contains("quota") || rawMessage.lowercase().contains("quota") || rawMessage.lowercase().contains("billing")) ->
-                "Kuota atau saldo API habis. Periksa billing/limit pada dashboard provider."
-            code == 429 -> "Terlalu banyak request (rate limit). Tunggu sebentar lalu coba lagi."
-            code == 400 -> "Request tidak valid (400). Periksa model, provider, dan konfigurasi. " + rawMessage.take(180)
-            code == 404 -> "Model atau endpoint tidak ditemukan (404). Periksa provider dan model yang dipilih."
-            code == 408 -> "Request timeout (408). Coba lagi atau gunakan model yang lebih cepat."
-            code in 500..599 -> "Server provider sedang bermasalah (HTTP $code). Coba lagi beberapa saat."
-            rawMessage.isNotBlank() -> "Request gagal (HTTP $code): " + rawMessage.take(220)
-            else -> "Request gagal (HTTP $code). Periksa konfigurasi lalu coba lagi."
+            code == 401 || combined.contains("invalid_api_key") || combined.contains("incorrect api key") ||
+                combined.contains("unauthorized") || errorType.contains("authentication") ->
+                "API KEY TIDAK VALID\nKey ditolak oleh provider. Buka Pengaturan, pastikan provider sesuai, lalu masukkan API key baru yang benar."
+            code == 403 -> "AKSES DITOLAK\nProvider menolak akses. Periksa izin API, billing, dan akses model pada dashboard provider."
+            code == 429 && (combined.contains("quota") || combined.contains("billing") || combined.contains("insufficient")) ->
+                "KUOTA API HABIS\nSaldo atau batas penggunaan API tidak mencukupi. Periksa billing dan limit provider."
+            code == 429 -> "RATE LIMIT\nTerlalu banyak permintaan. Tunggu sebentar lalu coba kembali."
+            code == 400 -> "REQUEST TIDAK VALID\nPeriksa model dan pengaturan provider. " + rawMessage.take(160)
+            code == 404 -> "MODEL / ENDPOINT TIDAK DITEMUKAN\nPeriksa provider dan model yang dipilih."
+            code == 408 -> "REQUEST TIMEOUT\nProvider terlalu lama merespons. Coba lagi atau gunakan model lebih cepat."
+            code in 500..599 -> "SERVER PROVIDER BERMASALAH (HTTP $code)\nCoba lagi beberapa saat."
+            rawMessage.isNotBlank() -> "REQUEST GAGAL (HTTP $code)\n" + rawMessage.take(180)
+            else -> "REQUEST GAGAL (HTTP $code)\nPeriksa konfigurasi dan coba lagi."
+        }
+    }
+
+    private fun friendlyException(e: Exception): String {
+        val raw = e.message.orEmpty().lowercase()
+        return when {
+            e is java.net.UnknownHostException -> "Tidak dapat terhubung ke server. Periksa koneksi internet atau alamat endpoint."
+            e is java.net.SocketTimeoutException || raw.contains("timeout") -> "Koneksi timeout. Provider terlalu lama merespons; coba lagi atau pilih model lebih cepat."
+            raw.contains("invalid_api_key") || raw.contains("incorrect api key") || raw.contains("401") ->
+                "API KEY TIDAK VALID\nKey ditolak provider. Buka Pengaturan, periksa provider, lalu masukkan API key yang benar."
+            raw.contains("quota") || raw.contains("billing") || raw.contains("insufficient") ->
+                "KUOTA API HABIS\nPeriksa saldo, billing, atau batas penggunaan di dashboard provider."
+            raw.contains("rate limit") || raw.contains("429") -> "RATE LIMIT\nTerlalu banyak permintaan. Tunggu sebentar lalu coba kembali."
+            e is IOException -> "Gangguan jaringan: ${e.message?.take(140) ?: "koneksi gagal"}. Periksa internet lalu coba kembali."
+            else -> e.message?.take(220) ?: "Terjadi kesalahan. Coba kembali."
         }
     }
 
