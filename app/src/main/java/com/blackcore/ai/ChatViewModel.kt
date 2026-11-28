@@ -119,7 +119,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             if(dao.messageCount(threadId)==1) dao.renameThread(threadId,prompt.take(40),System.currentTimeMillis())
             dao.touchThread(threadId,System.currentTimeMillis())
             val aid=UUID.randomUUID().toString(); var partial=""
-            if(stoppedGeneration == generation) { if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false); return@launch }
+            if(generation in stoppedGenerations) { if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false); return@launch }
             try {
                 val response=withContext(Dispatchers.IO) { stream(s.config,history,generation) { text ->
                     partial=text
@@ -129,7 +129,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 if(response.isNotBlank()) dao.insert(StoredMessage(aid,threadId,"assistant",response,System.currentTimeMillis()))
                 if(_state.value.activeThreadId==threadId && generation == generationCounter) _state.value=_state.value.copy(loading=false)
             } catch(e:Exception) {
-                if(stoppedGeneration == generation) {
+                if(generation in stoppedGenerations) {
                     if(partial.isNotBlank()) dao.insert(StoredMessage(aid,threadId,"assistant",partial,System.currentTimeMillis()))
                     if(_state.value.activeThreadId==threadId && generation == generationCounter) _state.value=_state.value.copy(loading=false)
                 } else {
@@ -146,7 +146,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             .header("Authorization","Bearer ${c.apiKey}").header("Accept","text/event-stream").build()
         val call=http.newCall(req)
         if(generation == generationCounter) activeCall=call
-        if(stoppedGeneration == generation) call.cancel()
+        if(generation in stoppedGenerations) call.cancel()
         call.execute().use { res ->
             if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw IllegalStateException("HTTP ${res.code}: ${msg.take(400)}") }
             val source=res.body?.source() ?: error("Empty response stream")
