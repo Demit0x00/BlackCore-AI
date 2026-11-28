@@ -32,9 +32,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("blackcore_settings", Context.MODE_PRIVATE)
     private val dao = BlackCoreDatabase.get(app).chatDao()
     private val http = OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(120, TimeUnit.SECONDS).build()
-    private var activeCall: Call? = null
+    @Volatile private var activeCall: Call? = null
     private var activeJob: Job? = null
-    private var stopping = false
+    @Volatile private var generationCounter = 0L
+    @Volatile private var stoppedGeneration: Long? = null
     private var messageCollection: Job? = null
 
     private fun readConfig() = AIConfig(
@@ -99,7 +100,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun newChat() = createChat()
     fun stopGeneration() {
-        stopping=true
+        stoppedGeneration = generationCounter
         activeCall?.cancel()
         _state.value=_state.value.copy(loading=false)
     }
@@ -108,7 +109,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if(prompt.isEmpty() || s.loading) return
         if(!s.configured) { _state.value=s.copy(error="Masukkan API key dan model melalui Settings terlebih dahulu."); return }
         if(s.activeThreadId.isBlank()) { createChat(); return }
-        stopping=false
+        val generation = ++generationCounter
+        stoppedGeneration = null
         val threadId=s.activeThreadId
         val user=ChatMessage(role="user",content=prompt); val history=s.messages+user
         _state.value=s.copy(messages=history,input="",loading=true,error=null)
@@ -117,33 +119,34 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             if(dao.messageCount(threadId)==1) dao.renameThread(threadId,prompt.take(40),System.currentTimeMillis())
             dao.touchThread(threadId,System.currentTimeMillis())
             val aid=UUID.randomUUID().toString(); var partial=""
-            if(stopping) { if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false); return@launch }
+            if(stoppedGeneration == generation) { if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false); return@launch }
             try {
-                val response=withContext(Dispatchers.IO) { stream(s.config,history) { text ->
+                val response=withContext(Dispatchers.IO) { stream(s.config,history,generation) { text ->
                     partial=text
                     if(_state.value.activeThreadId==threadId)
                         _state.value=_state.value.copy(messages=_state.value.messages.filterNot{it.id==aid}+ChatMessage(aid,"assistant",text))
                 } }
                 if(response.isNotBlank()) dao.insert(StoredMessage(aid,threadId,"assistant",response,System.currentTimeMillis()))
-                if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false)
+                if(_state.value.activeThreadId==threadId && generation == generationCounter) _state.value=_state.value.copy(loading=false)
             } catch(e:Exception) {
-                if(stopping) {
+                if(stoppedGeneration == generation) {
                     if(partial.isNotBlank()) dao.insert(StoredMessage(aid,threadId,"assistant",partial,System.currentTimeMillis()))
-                    if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false)
+                    if(_state.value.activeThreadId==threadId && generation == generationCounter) _state.value=_state.value.copy(loading=false)
                 } else {
-                    if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false,error=e.message ?: "Request error",messages=_state.value.messages.filterNot{it.id==aid})
+                    if(_state.value.activeThreadId==threadId && generation == generationCounter) _state.value=_state.value.copy(loading=false,error=e.message ?: "Request error",messages=_state.value.messages.filterNot{it.id==aid})
                 }
-            } finally { activeCall=null; stopping=false }
+            } finally { if(generation == generationCounter) activeCall=null }
         }
     }
-    private fun stream(c:AIConfig,history:List<ChatMessage>,onChunk:(String)->Unit):String {
+    private fun stream(c:AIConfig,history:List<ChatMessage>,generation:Long,onChunk:(String)->Unit):String {
         val arr=JSONArray().put(JSONObject().put("role","system").put("content",c.systemPrompt))
         history.forEach { arr.put(JSONObject().put("role",it.role).put("content",it.content)) }
         val body=JSONObject().put("model",c.model).put("messages",arr).put("stream",true).toString()
         val req=Request.Builder().url(c.endpoint).post(body.toRequestBody("application/json".toMediaType()))
             .header("Authorization","Bearer ${c.apiKey}").header("Accept","text/event-stream").build()
-        val call=http.newCall(req); activeCall=call
-        if(stopping) call.cancel()
+        val call=http.newCall(req)
+        if(generation == generationCounter) activeCall=call
+        if(stoppedGeneration == generation) call.cancel()
         call.execute().use { res ->
             if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw IllegalStateException("HTTP ${res.code}: ${msg.take(400)}") }
             val source=res.body?.source() ?: error("Empty response stream")
