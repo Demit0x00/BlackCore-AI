@@ -35,7 +35,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var activeCall: Call? = null
     private var activeJob: Job? = null
     @Volatile private var generationCounter = 0L
-    @Volatile private var stoppedGeneration: Long? = null
+    @Volatile private var stoppedGenerations: Set<Long> = emptySet()
     private var messageCollection: Job? = null
 
     private fun readConfig() = AIConfig(
@@ -110,7 +110,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if(!s.configured) { _state.value=s.copy(error="Masukkan API key dan model melalui Settings terlebih dahulu."); return }
         if(s.activeThreadId.isBlank()) { createChat(); return }
         val generation = ++generationCounter
-        stoppedGeneration = null
         val threadId=s.activeThreadId
         val user=ChatMessage(role="user",content=prompt); val history=s.messages+user
         _state.value=s.copy(messages=history,input="",loading=true,error=null)
