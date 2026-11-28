@@ -210,6 +210,27 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         return fallback.takeIf { it.isNotBlank() && it != config.model }
     }
 
+    private fun friendlyHttpError(code: Int, body: String): String {
+        val json = try { JSONObject(body).optJSONObject("error") ?: JSONObject(body) } catch (_: Exception) { JSONObject() }
+        val rawMessage = json.optString("message", "").trim()
+        val errorCode = json.optString("code", "").lowercase()
+        val errorType = json.optString("type", "").lowercase()
+        return when {
+            code == 401 || errorCode.contains("invalid_api_key") || errorType.contains("authentication") ->
+                "API key tidak valid atau sudah dicabut. Buka Settings, periksa provider, lalu masukkan API key yang benar."
+            code == 403 -> "Akses API ditolak (403). Periksa izin, billing, dan apakah provider/key memiliki akses ke model ini."
+            code == 429 && (errorCode.contains("quota") || rawMessage.lowercase().contains("quota") || rawMessage.lowercase().contains("billing")) ->
+                "Kuota atau saldo API habis. Periksa billing/limit pada dashboard provider."
+            code == 429 -> "Terlalu banyak request (rate limit). Tunggu sebentar lalu coba lagi."
+            code == 400 -> "Request tidak valid (400). Periksa model, provider, dan konfigurasi. " + rawMessage.take(180)
+            code == 404 -> "Model atau endpoint tidak ditemukan (404). Periksa provider dan model yang dipilih."
+            code == 408 -> "Request timeout (408). Coba lagi atau gunakan model yang lebih cepat."
+            code in 500..599 -> "Server provider sedang bermasalah (HTTP $code). Coba lagi beberapa saat."
+            rawMessage.isNotBlank() -> "Request gagal (HTTP $code): " + rawMessage.take(220)
+            else -> "Request gagal (HTTP $code). Periksa konfigurasi lalu coba lagi."
+        }
+    }
+
     private fun streamAnthropic(c:AIConfig,history:List<ChatMessage>,generation:Long,onChunk:(String)->Unit):String {
         val messages=JSONArray()
         history.forEach { messages.put(JSONObject().put("role",it.role).put("content",it.content)) }
@@ -220,7 +241,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if(generation == generationCounter) activeCall=call
         if(stoppedGenerations.contains(generation)) call.cancel()
         call.execute().use { res ->
-            if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw IllegalStateException("HTTP " + res.code + ": " + msg.take(400)) }
+            if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw IllegalStateException(friendlyHttpError(res.code, msg)) }
             val source=res.body?.source() ?: error("Empty response stream")
             val text=StringBuilder()
             while(!source.exhausted()) {
@@ -264,7 +285,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if(generation == generationCounter) activeCall=call
         if(stoppedGenerations.contains(generation)) call.cancel()
         call.execute().use { res ->
-            if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw IllegalStateException("HTTP ${res.code}: ${msg.take(400)}") }
+            if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw IllegalStateException(friendlyHttpError(res.code, msg)) }
             val source=res.body?.source() ?: error("Empty response stream")
             val text=StringBuilder()
             while(!source.exhausted()) {
