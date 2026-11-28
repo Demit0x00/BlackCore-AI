@@ -16,7 +16,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
 
-data class ChatMessage(val id: String = UUID.randomUUID().toString(), val role: String, val content: String)
+data class ChatMessage(val id: String = UUID.randomUUID().toString(), val role: String, val content: String)\nprivate class ProviderHttpException(val statusCode: Int, message: String) : IOException(message)
 data class AIConfig(
     val endpoint: String = "https://api.openai.com/v1/chat/completions",
     val apiKey: String = "",
@@ -238,7 +238,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val raw = e.message.orEmpty().lowercase()
         return when {
             e is java.net.UnknownHostException -> "Tidak dapat terhubung ke server. Periksa koneksi internet atau alamat endpoint."
-            e is java.net.SocketTimeoutException || raw.contains("timeout") -> "Koneksi timeout. Provider terlalu lama merespons; coba lagi atau pilih model lebih cepat."
+            e is java.net.SocketTimeoutException || raw.contains("timeout") -> "Respons terlalu lama atau koneksi tidak stabil. BlackCore kini memberi waktu lebih panjang; coba ulangi atau gunakan model yang lebih cepat."
             raw.contains("invalid_api_key") || raw.contains("incorrect api key") || raw.contains("401") ->
                 "API KEY TIDAK VALID\nKey ditolak provider. Buka Pengaturan, periksa provider, lalu masukkan API key yang benar."
             raw.contains("quota") || raw.contains("billing") || raw.contains("insufficient") ->
@@ -252,14 +252,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun streamAnthropic(c:AIConfig,history:List<ChatMessage>,generation:Long,onChunk:(String)->Unit):String {
         val messages=JSONArray()
         history.forEach { messages.put(JSONObject().put("role",it.role).put("content",it.content)) }
-        val body=JSONObject().put("model",c.model).put("max_tokens",4096).put("system",c.systemPrompt).put("messages",messages).put("stream",true).toString()
+        val recent = JSONArray()\n        val boundedHistory = history.takeLast(24)\n        boundedHistory.forEach { recent.put(JSONObject().put("role",it.role).put("content",it.content.take(30000))) }\n        val body=JSONObject().put("model",c.model).put("max_tokens",4096).put("system",c.systemPrompt.take(12000)).put("messages",recent).put("stream",true).toString()
         val req=Request.Builder().url(c.endpoint).post(body.toRequestBody("application/json".toMediaType()))
             .header("x-api-key",c.apiKey).header("anthropic-version","2023-06-01").header("Accept","text/event-stream").build()
         val call=http.newCall(req)
         if(generation == generationCounter) activeCall=call
         if(stoppedGenerations.contains(generation)) call.cancel()
         call.execute().use { res ->
-            if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw IllegalStateException(friendlyHttpError(res.code, msg)) }
+            if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw ProviderHttpException(res.code, friendlyHttpError(res.code, msg)) }
             val source=res.body?.source() ?: error("Empty response stream")
             val text=StringBuilder()
             while(!source.exhausted()) {
