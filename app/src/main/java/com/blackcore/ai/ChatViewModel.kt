@@ -150,11 +150,30 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val aid=UUID.randomUUID().toString(); var partial=""
             if(stoppedGenerations.contains(generation)) { stoppedGenerations.remove(generation); if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false); return@launch }
             try {
-                val response=withContext(Dispatchers.IO) { stream(s.config,history,generation) { text ->
-                    partial=text
-                    if(_state.value.activeThreadId==threadId && generation == generationCounter)
-                        _state.value=_state.value.copy(messages=_state.value.messages.filterNot{it.id==aid}+ChatMessage(aid,"assistant",text))
-                } }
+                val response=withContext(Dispatchers.IO) {
+                    try {
+                        stream(s.config,history,generation) { text ->
+                            partial=text
+                            if(_state.value.activeThreadId==threadId && generation == generationCounter)
+                                _state.value=_state.value.copy(messages=_state.value.messages.filterNot{it.id==aid}+ChatMessage(aid,"assistant",text))
+                        }
+                    } catch (first: Exception) {
+                        val fallback = fallbackModelFor(s.config, first)
+                        if (fallback == null || stoppedGenerations.contains(generation)) throw first
+                        val retryConfig = s.config.copy(model=fallback)
+                        // Save the recovered model so subsequent chats do not repeat the failing request.
+                        prefs.edit().putString("model", fallback).apply()
+                        if (_state.value.activeThreadId == threadId && generation == generationCounter)
+                            _state.value = _state.value.copy(config=retryConfig, model=retryConfig.provider + " · " + fallback, error=null,
+                                messages=_state.value.messages.filterNot { it.id == aid })
+                        partial = ""
+                        stream(retryConfig,history,generation) { text ->
+                            partial=text
+                            if(_state.value.activeThreadId==threadId && generation == generationCounter)
+                                _state.value=_state.value.copy(messages=_state.value.messages.filterNot{it.id==aid}+ChatMessage(aid,"assistant",text))
+                        }
+                    }
+                }
                 if(response.isNotBlank()) dao.insert(StoredMessage(aid,threadId,"assistant",response,System.currentTimeMillis()))
                 if(_state.value.activeThreadId==threadId && generation == generationCounter) _state.value=_state.value.copy(loading=false)
             } catch(e:Exception) {
@@ -167,6 +186,23 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             } finally { stoppedGenerations.remove(generation); if(generation == generationCounter) activeCall=null }
         }
     }
+    private fun fallbackModelFor(config: AIConfig, error: Exception): String? {
+        val message = error.message.orEmpty().lowercase()
+        val looksLikeModelError = message.contains("model") && (
+            message.contains("not found") || message.contains("not available") ||
+            message.contains("no longer available") || message.contains("unknown") ||
+            message.contains("unsupported") || message.contains("not supported") ||
+            message.contains("not_found") || message.contains("does not exist")
+        )
+        if (!looksLikeModelError) return null
+        val fallback = when (config.provider) {
+            "Google Gemini" -> "gemini-3.8-flash"
+            "OpenRouter" -> "google/gemini-3.8-flash"
+            else -> providerDefaults(config.provider).second
+        }
+        return fallback.takeIf { it.isNotBlank() && it != config.model }
+    }
+
     private fun streamAnthropic(c:AIConfig,history:List<ChatMessage>,generation:Long,onChunk:(String)->Unit):String {
         val messages=JSONArray()
         history.forEach { messages.put(JSONObject().put("role",it.role).put("content",it.content)) }
