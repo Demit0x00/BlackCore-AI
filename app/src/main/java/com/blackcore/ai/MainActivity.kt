@@ -48,7 +48,7 @@ private val Dark=Color(0xFF080B10); private val Card=Color(0xFF121923); private 
 class MainActivity:ComponentActivity(){
  override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent { CoreTheme { val vm:ChatViewModel=viewModel(); CoreApp(vm) } }}
 }
-@Composable fun CoreTheme(content:@Composable()->Unit){MaterialTheme(colorScheme=darkColorScheme(primary=Cyan,background=Dark,surface=Card,onBackground=Color.White,onSurface=Color.White),content=content)}
+@Composable fun CoreTheme(content: @Composable () -> Unit){MaterialTheme(colorScheme=darkColorScheme(primary=Cyan,background=Dark,surface=Card,onBackground=Color.White,onSurface=Color.White),content=content)}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun CoreApp(vm:ChatViewModel){
  val s by vm.state.collectAsState(); var settings by remember{mutableStateOf(false)}; var renameTarget by remember{mutableStateOf<ChatThread?>(null)}; var renameText by remember{mutableStateOf("")}; val drawer=rememberDrawerState(DrawerValue.Closed); val scope= rememberCoroutineScope()
