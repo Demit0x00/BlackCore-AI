@@ -5,6 +5,7 @@ plugins {
     id("org.jetbrains.kotlin.kapt")
 }
 android {
+    buildFeatures { buildConfig = true }
     namespace = "com.blackcore.ai"
     compileSdk = 35
     defaultConfig {
