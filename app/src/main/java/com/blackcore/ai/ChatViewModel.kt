@@ -21,7 +21,8 @@ data class AIConfig(
     val endpoint: String = "https://api.openai.com/v1/chat/completions",
     val apiKey: String = "",
     val model: String = "",
-    val systemPrompt: String = "You are BlackCore AI, a helpful, clear, and capable assistant."
+    val systemPrompt: String = "You are BlackCore AI, a helpful, clear, and capable assistant.",
+    val provider: String = "OpenAI"
 )
 data class ChatState(
     val messages: List<ChatMessage> = emptyList(), val input: String = "", val loading: Boolean = false,
@@ -42,10 +43,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun readConfig() = AIConfig(
         prefs.getString("endpoint", AIConfig().endpoint) ?: AIConfig().endpoint,
         prefs.getString("key", "") ?: "", prefs.getString("model", "") ?: "",
-        prefs.getString("system", AIConfig().systemPrompt) ?: AIConfig().systemPrompt
+        prefs.getString("system", AIConfig().systemPrompt) ?: AIConfig().systemPrompt,
+        prefs.getString("provider", "OpenAI") ?: "OpenAI"
     )
     private val config = readConfig()
-    private val _state = MutableStateFlow(ChatState(config=config, configured=config.apiKey.isNotBlank() && config.model.isNotBlank(), model=config.model))
+    private val _state = MutableStateFlow(ChatState(config=config, configured=config.apiKey.isNotBlank() && config.model.isNotBlank(), model=if(config.apiKey.isNotBlank()) config.provider + " · " + config.model else ""))
     val state: StateFlow<ChatState> = _state.asStateFlow()
 
     init {
@@ -95,9 +97,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
     fun setInput(v:String) { _state.value=_state.value.copy(input=v,error=null) }
-    fun saveConfig(c:AIConfig) {
-        prefs.edit().putString("endpoint",c.endpoint).putString("key",c.apiKey).putString("model",c.model).putString("system",c.systemPrompt).apply()
-        _state.value=_state.value.copy(config=c,configured=c.apiKey.isNotBlank() && c.model.isNotBlank(),model=c.model,error=null)
+    fun saveConfig(input:AIConfig) {
+        val provider = input.provider
+        val (endpoint, model) = providerDefaults(provider)
+        val c = input.copy(endpoint=endpoint, model=model)
+        prefs.edit().putString("endpoint",c.endpoint).putString("key",c.apiKey).putString("model",c.model).putString("system",c.systemPrompt).putString("provider",provider).apply()
+        _state.value=_state.value.copy(config=c,configured=c.apiKey.isNotBlank(),model=provider + " · " + model,error=null)
+    }
+    private fun providerDefaults(provider:String):Pair<String,String> = when(provider) {
+        "Google Gemini" -> "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions" to "gemini-2.5-flash"
+        "Groq" -> "https://api.groq.com/openai/v1/chat/completions" to "llama-3.3-70b-versatile"
+        "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions" to "openai/gpt-4.1-mini"
+        "DeepSeek" -> "https://api.deepseek.com/chat/completions" to "deepseek-chat"
+        else -> "https://api.openai.com/v1/chat/completions" to "gpt-4.1-mini"
     }
     fun newChat() = createChat()
     fun stopGeneration() {
@@ -108,7 +120,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun send() {
         val s=_state.value; val prompt=s.input.trim()
         if(prompt.isEmpty() || s.loading) return
-        if(!s.configured) { _state.value=s.copy(error="Masukkan API key dan model melalui Settings terlebih dahulu."); return }
+        if(!s.configured) { _state.value=s.copy(error="Masukkan API key dan pilih penyedia AI melalui Settings terlebih dahulu."); return }
         if(s.activeThreadId.isBlank()) { createChat(); return }
         val generation = ++generationCounter
         val threadId=s.activeThreadId
