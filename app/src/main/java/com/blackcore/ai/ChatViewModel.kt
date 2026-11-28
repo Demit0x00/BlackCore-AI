@@ -16,7 +16,8 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
 
-data class ChatMessage(val id: String = UUID.randomUUID().toString(), val role: String, val content: String)\nprivate class ProviderHttpException(val statusCode: Int, message: String) : IOException(message)
+data class ChatMessage(val id: String = UUID.randomUUID().toString(), val role: String, val content: String)
+private class ProviderHttpException(val statusCode: Int, message: String) : IOException(message)
 data class AIConfig(
     val endpoint: String = "https://api.openai.com/v1/chat/completions",
     val apiKey: String = "",
