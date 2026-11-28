@@ -100,7 +100,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun newChat() = createChat()
     fun stopGeneration() {
-        stoppedGeneration = generationCounter
+        stoppedGenerations = stoppedGenerations + generationCounter
         activeCall?.cancel()
         _state.value=_state.value.copy(loading=false)
     }
