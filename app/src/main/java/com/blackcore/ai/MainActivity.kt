@@ -1,6 +1,15 @@
 package com.blackcore.ai
 
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -48,10 +57,36 @@ private val Dark=Color(0xFF080B10); private val Card=Color(0xFF121923); private 
 class MainActivity:ComponentActivity(){
  override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent { CoreTheme { val vm:ChatViewModel=viewModel(); CoreApp(vm) } }}
 }
+private data class DeveloperUpdate(val version:String,val notes:String,val apkUrl:String,val pageUrl:String)
+private suspend fun checkDeveloperUpdate():DeveloperUpdate? = withContext(Dispatchers.IO) {
+ try {
+  val client=OkHttpClient.Builder().connectTimeout(10,TimeUnit.SECONDS).readTimeout(15,TimeUnit.SECONDS).build()
+  val req=Request.Builder().url("https://api.github.com/repos/Demit0x00/BlackCore-AI/releases/latest").header("Accept","application/vnd.github+json").build()
+  client.newCall(req).execute().use { response ->
+   if(!response.isSuccessful) return@withContext null
+   val release=JSONObject(response.body?.string().orEmpty())
+   val tag=release.optString("tag_name").removePrefix("v")
+   val current="1.0"
+   if(compareVersions(tag,current)<=0) return@withContext null
+   val assets=release.optJSONArray("assets") ?: return@withContext null
+   var apk=""
+   for(i in 0 until assets.length()) { val asset=assets.optJSONObject(i); if(asset.optString("name").endsWith(".apk",true)){apk=asset.optString("browser_download_url");break} }
+   if(apk.isBlank()) return@withContext null
+   DeveloperUpdate(tag,release.optString("body","Pembaruan tersedia."),apk,release.optString("html_url"))
+  }
+ } catch(_:Exception){null}
+}
+private fun compareVersions(a:String,b:String):Int {
+ fun nums(v:String)=v.split(".").map{it.filter(Char::isDigit).toIntOrNull()?:0}
+ val x=nums(a);val y=nums(b)
+ for(i in 0 until maxOf(x.size,y.size)){val d=(x.getOrElse(i){0}).compareTo(y.getOrElse(i){0});if(d!=0)return d}
+ return 0
+}
 @Composable fun CoreTheme(content: @Composable () -> Unit){MaterialTheme(colorScheme=darkColorScheme(primary=Cyan,background=Dark,surface=Card,onBackground=Color.White,onSurface=Color.White),content=content)}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun CoreApp(vm:ChatViewModel){
- val s by vm.state.collectAsState(); var settings by remember{mutableStateOf(false)}; var renameTarget by remember{mutableStateOf<ChatThread?>(null)}; var renameText by remember{mutableStateOf("")}; val drawer=rememberDrawerState(DrawerValue.Closed); val scope= rememberCoroutineScope()
+ val s by vm.state.collectAsState(); val context=LocalContext.current; var update by remember{mutableStateOf<DeveloperUpdate?>(null)}; var settings by remember{mutableStateOf(false)}; var renameTarget by remember{mutableStateOf<ChatThread?>(null)}; var renameText by remember{mutableStateOf("")}; val drawer=rememberDrawerState(DrawerValue.Closed); val scope= rememberCoroutineScope()
+ LaunchedEffect(Unit){ update=checkDeveloperUpdate() }
  ModalNavigationDrawer(drawerState=drawer,drawerContent={
   ModalDrawerSheet(drawerContainerColor=Dark) {
    Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically){Text("BLACKCORE",fontWeight=FontWeight.Black,color=Cyan);Spacer(Modifier.weight(1f));Text("AI",color=Gray)}
@@ -79,6 +114,7 @@ class MainActivity:ComponentActivity(){
  s.error?.let{Text(it,color=Color(0xFFFF7272),modifier=Modifier.padding(horizontal=16.dp,vertical=4.dp))}
  }}
  })
+ if(update!=null) AlertDialog(onDismissRequest={update=null},title={Text("Pembaruan BlackCore tersedia")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Versi baru: "+update!!.version);Text(update!!.notes.ifBlank{"Pengembang merilis pembaruan untuk BlackCore AI."},maxLines=8,overflow=TextOverflow.Ellipsis)}},confirmButton={Button(onClick={val url=update!!.apkUrl;update=null;context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}){Text("Update sekarang")}},dismissButton={TextButton(onClick={val url=update!!.pageUrl;update=null;context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}){Text("Detail")};TextButton(onClick={update=null}){Text("Nanti")}})
  if(settings)SettingsDialog(s.config,{vm.saveConfig(it);settings=false},{settings=false})
  renameTarget?.let{target->AlertDialog(onDismissRequest={renameTarget=null},title={Text("Rename chat")},text={OutlinedTextField(renameText,{renameText=it},singleLine=true,label={Text("Conversation title")})},confirmButton={TextButton(onClick={vm.renameChat(target.id,renameText);renameTarget=null}){Text("Save")}},dismissButton={TextButton(onClick={renameTarget=null}){Text("Cancel")}})}
 }
