@@ -128,7 +128,7 @@ private fun highlightCode(code:String):AnnotatedString{
  var provider by remember{mutableStateOf(config.provider)}
  var prompt by remember{mutableStateOf(config.systemPrompt)}
  var expanded by remember{mutableStateOf(false)}
- val providers=listOf("OpenAI","Google Gemini","Groq","OpenRouter","DeepSeek")
+ val providers=listOf("OpenAI","Google Gemini","Anthropic Claude","Groq","OpenRouter","DeepSeek","Mistral","xAI Grok","Together AI","Cerebras","Fireworks AI","Qwen (Alibaba)","Moonshot Kimi","Z.ai GLM","MiniMax")
  AlertDialog(onDismissRequest=onDismiss,title={Text("Pengaturan AI")},text={
   Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
    Text("Cukup masukkan API key. Model akan dipilih otomatis.",color=Cyan)
@@ -138,8 +138,8 @@ private fun highlightCode(code:String):AnnotatedString{
      providers.forEach { p -> DropdownMenuItem(text={Text(p)},onClick={provider=p;expanded=false}) }
     }
    }
-   OutlinedTextField(key,{key=it;provider=when{it.startsWith("AIza")->"Google Gemini";it.startsWith("gsk_")->"Groq";it.startsWith("sk-or-")->"OpenRouter";else->provider}},label={Text("API key")},singleLine=true)
-   Text("Model otomatis: "+when(provider){"Google Gemini"->"Gemini 2.5 Flash";"Groq"->"Llama 3.3 70B";"OpenRouter"->"GPT-4.1 mini";"DeepSeek"->"DeepSeek Chat";else->"GPT-4.1 mini"},style=MaterialTheme.typography.labelMedium,color=Gray)
+   OutlinedTextField(key,{key=it;provider=when{it.startsWith("AIza")->"Google Gemini";it.startsWith("sk-ant-")->"Anthropic Claude";it.startsWith("gsk_")->"Groq";it.startsWith("sk-or-")->"OpenRouter";it.startsWith("xai-")->"xAI Grok";it.startsWith("fw_")->"Fireworks AI";else->provider}},label={Text("API key")},singleLine=true)
+   Text("Model otomatis: "+when(provider){"Google Gemini"->"Gemini Flash";"Anthropic Claude"->"Claude Haiku";"Groq"->"GPT-OSS 120B";"OpenRouter"->"Gemini Flash";"DeepSeek"->"DeepSeek V4 Flash";"Mistral"->"Mistral Large";"xAI Grok"->"Grok";"Together AI"->"Llama";"Cerebras"->"GPT-OSS";"Fireworks AI"->"Llama";"Qwen (Alibaba)"->"Qwen Plus";"Moonshot Kimi"->"Kimi";"Z.ai GLM"->"GLM";"MiniMax"->"MiniMax";else->"GPT-4.1 mini"},style=MaterialTheme.typography.labelMedium,color=Gray)
    OutlinedTextField(prompt,{prompt=it},label={Text("Instruksi AI (opsional)")},minLines=2)
    Text("Jika penyedia tidak terdeteksi dari key, pilih nama provider di atas.",style=MaterialTheme.typography.labelSmall,color=Gray)
   }
