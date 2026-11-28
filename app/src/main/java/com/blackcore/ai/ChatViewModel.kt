@@ -234,6 +234,26 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
     private fun stream(c:AIConfig,history:List<ChatMessage>,generation:Long,onChunk:(String)->Unit):String {
+        // Retry one transient network/server failure and discard partial text to prevent duplicate tokens.
+        var attempt = 0
+        while (true) {
+            try {
+                return streamOnce(c, history, generation, onChunk)
+            } catch (e: Exception) {
+                val message = e.message.orEmpty()
+                val transient = e is IOException || message.contains("HTTP 429") ||
+                    Regex("""HTTP 5\\d\\d""").containsMatchIn(message) || message.contains("HTTP 408")
+                if (attempt >= 1 || !transient || stoppedGenerations.contains(generation)) throw e
+                attempt++
+                onChunk("")
+                try { Thread.sleep(900L) } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw e
+                }
+            }
+        }
+    }
+    private fun streamOnce(c:AIConfig,history:List<ChatMessage>,generation:Long,onChunk:(String)->Unit):String {
         if(c.provider == "Anthropic Claude") return streamAnthropic(c,history,generation,onChunk)
         val arr=JSONArray().put(JSONObject().put("role","system").put("content",c.systemPrompt))
         history.forEach { arr.put(JSONObject().put("role",it.role).put("content",it.content)) }
