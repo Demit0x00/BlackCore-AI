@@ -251,8 +251,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun streamAnthropic(c:AIConfig,history:List<ChatMessage>,generation:Long,onChunk:(String)->Unit):String {
         val messages=JSONArray()
-        history.forEach { messages.put(JSONObject().put("role",it.role).put("content",it.content)) }
-        val recent = JSONArray()\n        val boundedHistory = history.takeLast(24)\n        boundedHistory.forEach { recent.put(JSONObject().put("role",it.role).put("content",it.content.take(30000))) }\n        val body=JSONObject().put("model",c.model).put("max_tokens",4096).put("system",c.systemPrompt.take(12000)).put("messages",recent).put("stream",true).toString()
+        history.takeLast(24).forEach { messages.put(JSONObject().put("role",it.role).put("content",it.content.take(30000))) }
+        val body=JSONObject().put("model",c.model).put("max_tokens",4096).put("system",c.systemPrompt.take(12000)).put("messages",messages).put("stream",true).toString()
         val req=Request.Builder().url(c.endpoint).post(body.toRequestBody("application/json".toMediaType()))
             .header("x-api-key",c.apiKey).header("anthropic-version","2023-06-01").header("Accept","text/event-stream").build()
         val call=http.newCall(req)
@@ -280,12 +280,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 return streamOnce(c, history, generation, onChunk)
             } catch (e: Exception) {
                 val message = e.message.orEmpty()
-                val transient = e is IOException || message.contains("HTTP 429") ||
-                    Regex("""HTTP 5\\d\\d""").containsMatchIn(message) || message.contains("HTTP 408")
+                val httpTransient = e is ProviderHttpException && (e.statusCode == 408 || e.statusCode in 500..599 || (e.statusCode == 429 && !message.contains("KUOTA API HABIS")))
+                val transient = e is SocketTimeoutException || (e is IOException && e !is ProviderHttpException) || httpTransient
                 if (attempt >= 1 || !transient || stoppedGenerations.contains(generation)) throw e
                 attempt++
                 onChunk("")
-                try { Thread.sleep(900L) } catch (_: InterruptedException) {
+                try { Thread.sleep(1500L) } catch (_: InterruptedException) {
                     Thread.currentThread().interrupt()
                     throw e
                 }
