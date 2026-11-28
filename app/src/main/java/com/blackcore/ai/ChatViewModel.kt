@@ -303,7 +303,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if(generation == generationCounter) activeCall=call
         if(stoppedGenerations.contains(generation)) call.cancel()
         call.execute().use { res ->
-            if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw IllegalStateException(friendlyHttpError(res.code, msg)) }
+            if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw ProviderHttpException(res.code, friendlyHttpError(res.code, msg)) }
             val source=res.body?.source() ?: error("Empty response stream")
             val text=StringBuilder()
             while(!source.exhausted()) {
