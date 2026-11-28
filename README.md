@@ -1,51 +1,21 @@
-# BlackCore AI
+# BlackCore Remote
 
-Native Android AI chat built with Kotlin and Jetpack Compose.
+Consent-based remote device management, rebuilt from a clean slate.
 
-## Features
+## MVP
+- Pairing flow initiated on the target device with a short-lived code.
+- Authenticated relay and device heartbeat.
+- Initial allowlisted commands: PING, STATUS, RING.
+- Visible foreground notification on Android while connected.
+- No stealth, arbitrary shell, covert camera/microphone, clipboard harvesting, or file exfiltration.
 
-### Stage 1
-- Dark Compose chat UI with starter prompts
-- Provider-aware API key settings with automatic model presets (OpenAI, Google Gemini, Anthropic Claude, Groq, OpenRouter, DeepSeek, Mistral, xAI Grok, Together AI, Cerebras, Fireworks AI, Qwen, Moonshot Kimi, Z.ai GLM, MiniMax)
-- Beginner-friendly provider selection and key-prefix detection; model IDs and API endpoints are configured automatically
-- Optional system prompt customization
-- Streaming responses using Server-Sent Events (SSE)
-- Local persistence using Room
+## Structure
+- server/: relay prototype
+- android/: client planned next
 
-### Stage 2
-- Multi-conversation history drawer
-- Create, switch, rename, and delete conversations
-- Room schema migration to preserve existing messages in a legacy conversation
-- Markdown rendering (headings, lists, links, tables, emphasis, inline code)
-- Fenced code blocks with language label, basic token coloring, text selection, and copy button
-- Stop-generation button; partial assistant output is retained when stopping
+## Local relay
+1. cd server && npm install
+2. Copy .env.example to .env and set a strong random OWNER_TOKEN.
+3. npm start
 
-## Build
-Open in Android Studio (JDK 17, Android SDK 35), sync Gradle, and run on Android 8.0+.
-
-GitHub Actions workflow `.github/workflows/android-build.yml` builds a debug APK on pushes and pull requests to `main`. The release workflow builds and publishes a signed APK when a `v*` tag is pushed or manually dispatched.
-
-## Setup
-In the app Settings, select the AI provider (key prefixes automatically recognize Gemini, Groq, and OpenRouter), then paste the provider API key. BlackCore AI selects a preset model and endpoint automatically. Most providers use OpenAI-compatible Chat Completions with SSE streaming. Anthropic Claude uses its native Messages streaming API. Provider key-prefix detection recognizes Gemini, Claude, Groq, OpenRouter, xAI, and Fireworks; for other keys, select the provider manually. Model presets are defaults and can change as providers retire models.
-
-## App update releases
-The app checks the GitHub Releases API for a newer version and displays a dialog with release notes and an **Update now** link. In-place Android updates require every release APK to use the same signing key. Configure these repository Actions secrets before publishing:
-
-- `BLACKCORE_KEYSTORE_BASE64`: base64-encoded release keystore file
-- `BLACKCORE_STORE_PASSWORD`: keystore password
-- `BLACKCORE_KEY_ALIAS`: signing key alias
-- `BLACKCORE_KEY_PASSWORD`: key password
-
-Generate a release key once (keep it backed up securely; do not commit it):
-
-```bash
-keytool -genkeypair -v -keystore blackcore-release.jks -alias blackcore -keyalg RSA -keysize 2048 -validity 10000
-base64 -w 0 blackcore-release.jks > blackcore-release.base64
-```
-Add the four values under GitHub repository **Settings → Secrets and variables → Actions**. Then publish a version tag such as `v1.1` or manually run the **Publish BlackCore AI release** workflow. The workflow will upload the signed APK to GitHub Releases. Keep the keystore/passwords private and make secure backups; losing the signing key prevents in-place updates.
-
-## Security
-This starter stores the API key in SharedPreferences. This is not production-grade secret storage. Never commit a real API key. For public distribution, use an authenticated backend proxy with server-side credentials.
-
-## Status
-Stage 2 source is committed. The CI build is configured but has not yet completed successfully in this session. Device testing and validation against the selected API provider are still required.
+Prototype uses volatile memory only. Do not expose publicly until TLS, persistence, rate limiting, and audit logging are configured.
