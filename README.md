@@ -23,10 +23,26 @@ Native Android AI chat built with Kotlin and Jetpack Compose.
 ## Build
 Open in Android Studio (JDK 17, Android SDK 35), sync Gradle, and run on Android 8.0+.
 
-GitHub Actions workflow `.github/workflows/android-build.yml` runs a debug APK assembly on pushes and pull requests to `main`.
+GitHub Actions workflow `.github/workflows/android-build.yml` builds a debug APK on pushes and pull requests to `main`. The release workflow builds and publishes a signed APK when a `v*` tag is pushed or manually dispatched.
 
 ## Setup
 In the app Settings, select the AI provider (key prefixes automatically recognize Gemini, Groq, and OpenRouter), then paste the provider API key. BlackCore AI selects a preset model and endpoint automatically. Most providers use OpenAI-compatible Chat Completions with SSE streaming. Anthropic Claude uses its native Messages streaming API. Provider key-prefix detection recognizes Gemini, Claude, Groq, OpenRouter, xAI, and Fireworks; for other keys, select the provider manually. Model presets are defaults and can change as providers retire models.
+
+## App update releases
+The app checks the GitHub Releases API for a newer version and displays a dialog with release notes and an **Update now** link. In-place Android updates require every release APK to use the same signing key. Configure these repository Actions secrets before publishing:
+
+- `BLACKCORE_KEYSTORE_BASE64`: base64-encoded release keystore file
+- `BLACKCORE_STORE_PASSWORD`: keystore password
+- `BLACKCORE_KEY_ALIAS`: signing key alias
+- `BLACKCORE_KEY_PASSWORD`: key password
+
+Generate a release key once (keep it backed up securely; do not commit it):
+
+```bash
+keytool -genkeypair -v -keystore blackcore-release.jks -alias blackcore -keyalg RSA -keysize 2048 -validity 10000
+base64 -w 0 blackcore-release.jks > blackcore-release.base64
+```
+Add the four values under GitHub repository **Settings → Secrets and variables → Actions**. Then publish a version tag such as `v1.1` or manually run the **Publish BlackCore AI release** workflow. The workflow will upload the signed APK to GitHub Releases. Keep the keystore/passwords private and make secure backups; losing the signing key prevents in-place updates.
 
 ## Security
 This starter stores the API key in SharedPreferences. This is not production-grade secret storage. Never commit a real API key. For public distribution, use an authenticated backend proxy with server-side credentials.
