@@ -123,7 +123,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val response=withContext(Dispatchers.IO) { stream(s.config,history,generation) { text ->
                     partial=text
-                    if(_state.value.activeThreadId==threadId)
+                    if(_state.value.activeThreadId==threadId && generation == generationCounter)
                         _state.value=_state.value.copy(messages=_state.value.messages.filterNot{it.id==aid}+ChatMessage(aid,"assistant",text))
                 } }
                 if(response.isNotBlank()) dao.insert(StoredMessage(aid,threadId,"assistant",response,System.currentTimeMillis()))
