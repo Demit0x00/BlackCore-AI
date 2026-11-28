@@ -14,6 +14,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 
 data class ChatMessage(val id: String = UUID.randomUUID().toString(), val role: String, val content: String)
 data class AIConfig(
@@ -35,7 +36,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var activeCall: Call? = null
     private var activeJob: Job? = null
     @Volatile private var generationCounter = 0L
-    @Volatile private var stoppedGenerations: Set<Long> = emptySet()
+    private val stoppedGenerations = ConcurrentHashMap.newKeySet<Long>()
     private var messageCollection: Job? = null
 
     private fun readConfig() = AIConfig(
@@ -100,7 +101,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun newChat() = createChat()
     fun stopGeneration() {
-        stoppedGenerations = stoppedGenerations + generationCounter
+        stoppedGenerations.add(generationCounter)
         activeCall?.cancel()
         _state.value=_state.value.copy(loading=false)
     }
@@ -118,7 +119,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             if(dao.messageCount(threadId)==1) dao.renameThread(threadId,prompt.take(40),System.currentTimeMillis())
             dao.touchThread(threadId,System.currentTimeMillis())
             val aid=UUID.randomUUID().toString(); var partial=""
-            if(generation in stoppedGenerations) { stoppedGenerations = stoppedGenerations - generation; if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false); return@launch }
+            if(stoppedGenerations.contains(generation)) { stoppedGenerations.remove(generation); if(_state.value.activeThreadId==threadId) _state.value=_state.value.copy(loading=false); return@launch }
             try {
                 val response=withContext(Dispatchers.IO) { stream(s.config,history,generation) { text ->
                     partial=text
@@ -128,13 +129,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 if(response.isNotBlank()) dao.insert(StoredMessage(aid,threadId,"assistant",response,System.currentTimeMillis()))
                 if(_state.value.activeThreadId==threadId && generation == generationCounter) _state.value=_state.value.copy(loading=false)
             } catch(e:Exception) {
-                if(generation in stoppedGenerations) {
+                if(stoppedGenerations.contains(generation)) {
                     if(partial.isNotBlank()) dao.insert(StoredMessage(aid,threadId,"assistant",partial,System.currentTimeMillis()))
                     if(_state.value.activeThreadId==threadId && generation == generationCounter) _state.value=_state.value.copy(loading=false)
                 } else {
                     if(_state.value.activeThreadId==threadId && generation == generationCounter) _state.value=_state.value.copy(loading=false,error=e.message ?: "Request error",messages=_state.value.messages.filterNot{it.id==aid})
                 }
-            } finally { stoppedGenerations = stoppedGenerations - generation; if(generation == generationCounter) activeCall=null }
+            } finally { stoppedGenerations.remove(generation); if(generation == generationCounter) activeCall=null }
         }
     }
     private fun stream(c:AIConfig,history:List<ChatMessage>,generation:Long,onChunk:(String)->Unit):String {
@@ -145,7 +146,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             .header("Authorization","Bearer ${c.apiKey}").header("Accept","text/event-stream").build()
         val call=http.newCall(req)
         if(generation == generationCounter) activeCall=call
-        if(generation in stoppedGenerations) call.cancel()
+        if(stoppedGenerations.contains(generation)) call.cancel()
         call.execute().use { res ->
             if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw IllegalStateException("HTTP ${res.code}: ${msg.take(400)}") }
             val source=res.body?.source() ?: error("Empty response stream")
