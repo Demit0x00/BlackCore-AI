@@ -106,9 +106,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
     private fun providerDefaults(provider:String):Pair<String,String> = when(provider) {
         "Google Gemini" -> "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions" to "gemini-2.5-flash"
-        "Groq" -> "https://api.groq.com/openai/v1/chat/completions" to "llama-3.3-70b-versatile"
-        "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions" to "openai/gpt-4.1-mini"
-        "DeepSeek" -> "https://api.deepseek.com/chat/completions" to "deepseek-chat"
+        "Anthropic Claude" -> "https://api.anthropic.com/v1/messages" to "claude-haiku-4-5"
+        "Groq" -> "https://api.groq.com/openai/v1/chat/completions" to "openai/gpt-oss-120b"
+        "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions" to "google/gemini-2.5-flash"
+        "DeepSeek" -> "https://api.deepseek.com/chat/completions" to "deepseek-v4-flash"
+        "Mistral" -> "https://api.mistral.ai/v1/chat/completions" to "mistral-large-latest"
+        "xAI Grok" -> "https://api.x.ai/v1/chat/completions" to "grok-4"
+        "Together AI" -> "https://api.together.xyz/v1/chat/completions" to "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+        "Cerebras" -> "https://api.cerebras.ai/v1/chat/completions" to "openai/gpt-oss-120b"
+        "Fireworks AI" -> "https://api.fireworks.ai/inference/v1/chat/completions" to "accounts/fireworks/models/llama-v3p3-70b-instruct"
+        "Qwen (Alibaba)" -> "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions" to "qwen-plus"
+        "Moonshot Kimi" -> "https://api.moonshot.ai/v1/chat/completions" to "kimi-k2.5"
+        "Z.ai GLM" -> "https://api.z.ai/api/paas/v4/chat/completions" to "glm-5"
+        "MiniMax" -> "https://api.minimax.io/v1/chat/completions" to "MiniMax-M2.5"
         else -> "https://api.openai.com/v1/chat/completions" to "gpt-4.1-mini"
     }
     fun newChat() = createChat()
