@@ -66,7 +66,7 @@ private suspend fun checkDeveloperUpdate():DeveloperUpdate? = withContext(Dispat
    if(!response.isSuccessful) return@withContext null
    val release=JSONObject(response.body?.string().orEmpty())
    val tag=release.optString("tag_name").removePrefix("v")
-   val current="1.0"
+   val current=BuildConfig.VERSION_NAME
    if(compareVersions(tag,current)<=0) return@withContext null
    val assets=release.optJSONArray("assets") ?: return@withContext null
    var apk=""
