@@ -60,18 +60,22 @@ private data class DeveloperUpdate(val version:String,val notes:String,val apkUr
 private suspend fun checkDeveloperUpdate():DeveloperUpdate? = withContext(Dispatchers.IO) {
  try {
   val client=OkHttpClient.Builder().connectTimeout(10,TimeUnit.SECONDS).readTimeout(15,TimeUnit.SECONDS).build()
-  val req=Request.Builder().url("https://api.github.com/repos/Demit0x00/BlackCore-AI/releases/latest").header("Accept","application/vnd.github+json").build()
+  val req=Request.Builder().url("https://api.github.com/repos/Demit0x00/BlackCore-AI/releases?per_page=10").header("Accept","application/vnd.github+json").build()
   client.newCall(req).execute().use { response ->
    if(!response.isSuccessful) return@withContext null
-   val release=JSONObject(response.body?.string().orEmpty())
-   val tag=release.optString("tag_name").removePrefix("v")
+   val releases=org.json.JSONArray(response.body?.string().orEmpty())
    val current=BuildConfig.VERSION_NAME
-   if(compareVersions(tag,current)<=0) return@withContext null
-   val assets=release.optJSONArray("assets") ?: return@withContext null
-   var apk=""
-   for(i in 0 until assets.length()) { val asset=assets.optJSONObject(i); if(asset.optString("name").endsWith(".apk",true)){apk=asset.optString("browser_download_url");break} }
-   if(apk.isBlank()) return@withContext null
-   DeveloperUpdate(tag,release.optString("body","Pembaruan tersedia."),apk,release.optString("html_url"))
+   for(i in 0 until releases.length()) {
+    val release=releases.optJSONObject(i) ?: continue
+    if(release.optBoolean("draft",true) || release.optBoolean("prerelease",false)) continue
+    val tag=release.optString("tag_name").removePrefix("v")
+    if(compareVersions(tag,current)<=0) continue
+    val assets=release.optJSONArray("assets") ?: continue
+    var apk=""
+    for(j in 0 until assets.length()) { val asset=assets.optJSONObject(j); if(asset.optString("name").endsWith(".apk",true)){apk=asset.optString("browser_download_url");break} }
+    if(apk.isNotBlank()) return@withContext DeveloperUpdate(tag,release.optString("body","Pembaruan tersedia."),apk,release.optString("html_url"))
+   }
+   null
   }
  } catch(_:Exception){null}
 }
@@ -84,7 +88,7 @@ private fun compareVersions(a:String,b:String):Int {
 @Composable fun CoreTheme(content: @Composable () -> Unit){MaterialTheme(colorScheme=darkColorScheme(primary=Cyan,background=Dark,surface=Card,onBackground=Color.White,onSurface=Color.White),content=content)}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun CoreApp(vm:ChatViewModel){
- val s by vm.state.collectAsState(); val context=LocalContext.current; var update by remember{mutableStateOf<DeveloperUpdate?>(null)}; var settings by remember{mutableStateOf(false)}; var renameTarget by remember{mutableStateOf<ChatThread?>(null)}; var renameText by remember{mutableStateOf("")}; val drawer=rememberDrawerState(DrawerValue.Closed); val scope= rememberCoroutineScope()
+ val s by vm.state.collectAsState(); val context=LocalContext.current; var update by remember{mutableStateOf<DeveloperUpdate?>(null)}; var updateCheckMessage by remember{mutableStateOf<String?>(null)}; var checkingUpdate by remember{mutableStateOf(false)}; var settings by remember{mutableStateOf(false)}; var renameTarget by remember{mutableStateOf<ChatThread?>(null)}; var renameText by remember{mutableStateOf("")}; val drawer=rememberDrawerState(DrawerValue.Closed); val scope= rememberCoroutineScope()
  LaunchedEffect(Unit){ update=checkDeveloperUpdate() }
  ModalNavigationDrawer(drawerState=drawer,drawerContent={
   ModalDrawerSheet(drawerContainerColor=Dark) {
@@ -114,7 +118,8 @@ private fun compareVersions(a:String,b:String):Int {
  }}
  })
  if(update!=null) AlertDialog(onDismissRequest={update=null},title={Text("Pembaruan BlackCore tersedia")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text("Versi baru: "+update!!.version);Text(update!!.notes.ifBlank{"Pengembang merilis pembaruan untuk BlackCore AI."},maxLines=8,overflow=TextOverflow.Ellipsis)}},confirmButton={Button(onClick={val url=update!!.apkUrl;update=null;context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}){Text("Update sekarang")}},dismissButton={TextButton(onClick={val url=update!!.pageUrl;update=null;context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}){Text("Detail")};TextButton(onClick={update=null}){Text("Nanti")}})
- if(settings)SettingsDialog(s.config,{vm.saveConfig(it);settings=false},{settings=false})
+ if(updateCheckMessage!=null) AlertDialog(onDismissRequest={updateCheckMessage=null},title={Text("Pemeriksaan pembaruan")},text={Text(updateCheckMessage.orEmpty())},confirmButton={TextButton(onClick={updateCheckMessage=null}){Text("OK")}})
+ if(settings)SettingsDialog(s.config,{vm.saveConfig(it);settings=false},{settings=false},onCheckUpdate={scope.launch{checkingUpdate=true;updateCheckMessage=null;val found=checkDeveloperUpdate();checkingUpdate=false;if(found!=null)update=found else updateCheckMessage="Tidak ada pembaruan tersedia, atau pemeriksaan gagal. Periksa koneksi internet dan coba lagi."}},checkingUpdate=checkingUpdate)
  renameTarget?.let{target->AlertDialog(onDismissRequest={renameTarget=null},title={Text("Rename chat")},text={OutlinedTextField(renameText,{renameText=it},singleLine=true,label={Text("Conversation title")})},confirmButton={TextButton(onClick={vm.renameChat(target.id,renameText);renameTarget=null}){Text("Save")}},dismissButton={TextButton(onClick={renameTarget=null}){Text("Cancel")}})}
 }
 @Composable fun Welcome(onPrompt:(String)->Unit){Column(Modifier.fillMaxSize().padding(24.dp),verticalArrangement=Arrangement.Center,horizontalAlignment=Alignment.CenterHorizontally){Icon(Icons.Default.SmartToy,null,tint=Cyan,modifier=Modifier.size(64.dp));Text("BlackCore AI",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold);Text("Your personal AI workspace.",color=Gray);Spacer(Modifier.height(24.dp));listOf("Jelaskan konsep yang sulit","Bantu saya menulis kode","Buat rencana belajar").forEach{prompt->OutlinedButton(onClick={onPrompt(prompt)},modifier=Modifier.fillMaxWidth().padding(vertical=4.dp)){Text(prompt)}}}}
@@ -158,7 +163,7 @@ private fun highlightCode(code:String):AnnotatedString{
   append(code.substring(pos))
  }
 }
-@Composable fun SettingsDialog(config:AIConfig,onSave:(AIConfig)->Unit,onDismiss:()->Unit){
+@Composable fun SettingsDialog(config:AIConfig,onSave:(AIConfig)->Unit,onDismiss:()->Unit,onCheckUpdate:()->Unit={},checkingUpdate:Boolean=false){
  var key by remember{mutableStateOf(config.apiKey)}
  var provider by remember{mutableStateOf(config.provider)}
  var prompt by remember{mutableStateOf(config.systemPrompt)}
@@ -177,6 +182,7 @@ private fun highlightCode(code:String):AnnotatedString{
    Text("Model otomatis: "+when(provider){"Google Gemini"->"Gemini Flash";"Anthropic Claude"->"Claude Haiku";"Groq"->"GPT-OSS 120B";"OpenRouter"->"Gemini Flash";"DeepSeek"->"DeepSeek V4 Flash";"Mistral"->"Mistral Large";"xAI Grok"->"Grok";"Together AI"->"Llama";"Cerebras"->"GPT-OSS";"Fireworks AI"->"Llama";"Qwen (Alibaba)"->"Qwen Plus";"Moonshot Kimi"->"Kimi";"Z.ai GLM"->"GLM";"MiniMax"->"MiniMax";else->"GPT-4.1 mini"},style=MaterialTheme.typography.labelMedium,color=Gray)
    OutlinedTextField(prompt,{prompt=it},label={Text("Instruksi AI (opsional)")},minLines=2)
    Text("Jika penyedia tidak terdeteksi dari key, pilih nama provider di atas.",style=MaterialTheme.typography.labelSmall,color=Gray)
+   OutlinedButton(onClick=onCheckUpdate,enabled=!checkingUpdate,modifier=Modifier.fillMaxWidth()){if(checkingUpdate)CircularProgressIndicator(Modifier.size(16.dp),strokeWidth=2.dp);Spacer(Modifier.width(8.dp));Text(if(checkingUpdate)"Memeriksa…" else "Periksa pembaruan aplikasi")}
   }
  },confirmButton={Button(onClick={onSave(config.copy(apiKey=key.trim(),provider=provider,systemPrompt=prompt))},enabled=key.isNotBlank()){Text("Simpan")}},dismissButton={TextButton(onClick=onDismiss){Text("Batal")}})
 }
