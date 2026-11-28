@@ -123,5 +123,25 @@ private fun highlightCode(code:String):AnnotatedString{
   append(code.substring(pos))
  }
 }
-@Composable fun SettingsDialog(config:AIConfig,onSave:(AIConfig)->Unit,onDismiss:()->Unit){var url by remember{mutableStateOf(config.endpoint)};var key by remember{mutableStateOf(config.apiKey)};var model by remember{mutableStateOf(config.model)};var prompt by remember{mutableStateOf(config.systemPrompt)}
- AlertDialog(onDismissRequest=onDismiss,title={Text("AI Settings")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){OutlinedTextField(url,{url=it},label={Text("Chat completions URL")},singleLine=true);OutlinedTextField(key,{key=it},label={Text("API key")},singleLine=true);OutlinedTextField(model,{model=it},label={Text("Model ID")},singleLine=true);OutlinedTextField(prompt,{prompt=it},label={Text("System prompt")},minLines=2);Text("Endpoint harus kompatibel dengan OpenAI Chat Completions.",style=MaterialTheme.typography.labelSmall,color=Gray)}},confirmButton={Button(onClick={onSave(AIConfig(url.trim(),key.trim(),model.trim(),prompt))}){Text("Save")}},dismissButton={TextButton(onClick=onDismiss){Text("Cancel")}})}
+@Composable fun SettingsDialog(config:AIConfig,onSave:(AIConfig)->Unit,onDismiss:()->Unit){
+ var key by remember{mutableStateOf(config.apiKey)}
+ var provider by remember{mutableStateOf(config.provider)}
+ var prompt by remember{mutableStateOf(config.systemPrompt)}
+ var expanded by remember{mutableStateOf(false)}
+ val providers=listOf("OpenAI","Google Gemini","Groq","OpenRouter","DeepSeek")
+ AlertDialog(onDismissRequest=onDismiss,title={Text("Pengaturan AI")},text={
+  Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+   Text("Cukup masukkan API key. Model akan dipilih otomatis.",color=Cyan)
+   Box {
+    OutlinedButton(onClick={expanded=true},modifier=Modifier.fillMaxWidth()){Text("Penyedia: "+provider)}
+    DropdownMenu(expanded=expanded,onDismissRequest={expanded=false}) {
+     providers.forEach { p -> DropdownMenuItem(text={Text(p)},onClick={provider=p;expanded=false}) }
+    }
+   }
+   OutlinedTextField(key,{key=it;provider=when{it.startsWith("AIza")->"Google Gemini";it.startsWith("gsk_")->"Groq";it.startsWith("sk-or-")->"OpenRouter";else->provider}},label={Text("API key")},singleLine=true)
+   Text("Model otomatis: "+when(provider){"Google Gemini"->"Gemini 2.5 Flash";"Groq"->"Llama 3.3 70B";"OpenRouter"->"GPT-4.1 mini";"DeepSeek"->"DeepSeek Chat";else->"GPT-4.1 mini"},style=MaterialTheme.typography.labelMedium,color=Gray)
+   OutlinedTextField(prompt,{prompt=it},label={Text("Instruksi AI (opsional)")},minLines=2)
+   Text("Jika penyedia tidak terdeteksi dari key, pilih nama provider di atas.",style=MaterialTheme.typography.labelSmall,color=Gray)
+  }
+ },confirmButton={Button(onClick={onSave(config.copy(apiKey=key.trim(),provider=provider,systemPrompt=prompt))},enabled=key.isNotBlank()){Text("Simpan")}},dismissButton={TextButton(onClick=onDismiss){Text("Batal")}})
+}
