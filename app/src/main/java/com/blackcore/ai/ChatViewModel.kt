@@ -160,7 +160,31 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             } finally { stoppedGenerations.remove(generation); if(generation == generationCounter) activeCall=null }
         }
     }
+    private fun streamAnthropic(c:AIConfig,history:List<ChatMessage>,generation:Long,onChunk:(String)->Unit):String {
+        val messages=JSONArray()
+        history.forEach { messages.put(JSONObject().put("role",it.role).put("content",it.content)) }
+        val body=JSONObject().put("model",c.model).put("max_tokens",4096).put("system",c.systemPrompt).put("messages",messages).put("stream",true).toString()
+        val req=Request.Builder().url(c.endpoint).post(body.toRequestBody("application/json".toMediaType()))
+            .header("x-api-key",c.apiKey).header("anthropic-version","2023-06-01").header("Accept","text/event-stream").build()
+        val call=http.newCall(req)
+        if(generation == generationCounter) activeCall=call
+        if(stoppedGenerations.contains(generation)) call.cancel()
+        call.execute().use { res ->
+            if(!res.isSuccessful) { val msg=res.body?.string().orEmpty(); throw IllegalStateException("HTTP " + res.code + ": " + msg.take(400)) }
+            val source=res.body?.source() ?: error("Empty response stream")
+            val text=StringBuilder()
+            while(!source.exhausted()) {
+                val line=source.readUtf8Line() ?: break
+                if(!line.startsWith("data:")) continue
+                val data=line.removePrefix("data:").trim()
+                val delta=try { JSONObject(data).optJSONObject("delta")?.optString("text").orEmpty() } catch(_:Exception){""}
+                if(delta.isNotEmpty()){text.append(delta);onChunk(text.toString())}
+            }
+            return text.toString()
+        }
+    }
     private fun stream(c:AIConfig,history:List<ChatMessage>,generation:Long,onChunk:(String)->Unit):String {
+        if(c.provider == "Anthropic Claude") return streamAnthropic(c,history,generation,onChunk)
         val arr=JSONArray().put(JSONObject().put("role","system").put("content",c.systemPrompt))
         history.forEach { arr.put(JSONObject().put("role",it.role).put("content",it.content)) }
         val body=JSONObject().put("model",c.model).put("messages",arr).put("stream",true).toString()
