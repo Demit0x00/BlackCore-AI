@@ -23,22 +23,22 @@ const auth = (token) => {
   return timingSafeEqual(Buffer.from(token), Buffer.from(OWNER_TOKEN));
 };
 const send = (ws, obj) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); };
-function cleanup() { const now = Date.now(); for (const [code, expiry] of pending) if (expiry <= now) pending.delete(code); }
+function cleanup() { const now = Date.now(); for (const [code, entry] of pending) if (entry.expiresAt <= now || entry.ws.readyState !== WebSocket.OPEN) pending.delete(code); }
 
 wss.on('connection', (ws) => {
   let role = null, id = null;
   ws.on('message', (raw) => {
     let msg; try { msg = JSON.parse(raw.toString()); } catch { send(ws, { type: 'ERROR', message: 'Invalid JSON' }); return; }
     if (!role) {
+      if (ws._pairApproved && msg.type === 'DEVICE_READY') {
+        role = 'device'; id = ws._pairedDeviceId; devices.set(id, ws);
+        broadcast({ type: 'DEVICE_ONLINE', deviceId: id }); return;
+      }
       if (msg.type === 'OWNER_AUTH' && auth(msg.token)) { role = 'owner'; send(ws, { type: 'AUTH_OK', devices: [...devices.keys()] }); return; }
       if (msg.type === 'DEVICE_PAIR_REQUEST') {
         cleanup(); const code = String(randomInt(100000, 999999));
-        pending.set(code, Date.now() + CODE_TTL * 1000);
+        pending.set(code, { expiresAt: Date.now() + CODE_TTL * 1000, ws });
         send(ws, { type: 'PAIR_CODE', code, expiresIn: CODE_TTL }); return;
-      }
-      if (msg.type === 'DEVICE_PAIR_CONFIRM' && typeof msg.code === 'string' && pending.has(msg.code) && pending.get(msg.code) > Date.now() && typeof msg.deviceId === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(msg.deviceId)) {
-        pending.delete(msg.code); role = 'device'; id = msg.deviceId; devices.set(id, ws);
-        send(ws, { type: 'PAIRED', deviceId: id }); broadcast({ type: 'DEVICE_ONLINE', deviceId: id }); return;
       }
       send(ws, { type: 'ERROR', message: 'Authenticate or pair first' }); return;
     }
@@ -51,6 +51,17 @@ wss.on('connection', (ws) => {
     }
     if (role === 'owner') {
       if (msg.type === 'LIST_DEVICES') { send(ws, { type: 'DEVICES', devices: [...devices.keys()] }); return; }
+      if (msg.type === 'PAIR_DEVICE' && typeof msg.code === 'string' && typeof msg.deviceId === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(msg.deviceId)) {
+        cleanup(); const entry = pending.get(msg.code);
+        if (!entry || entry.expiresAt <= Date.now()) { send(ws, { type: 'ERROR', message: 'Pairing code expired or invalid' }); return; }
+        if (devices.has(msg.deviceId)) { send(ws, { type: 'ERROR', message: 'Device ID already paired/online' }); return; }
+        pending.delete(msg.code); const deviceSocket = entry.ws; deviceSocket._pairedDeviceId = msg.deviceId;
+        deviceSocket._pairApproved = true; deviceSocket._pairCode = msg.code;
+        send(deviceSocket, { type: 'PAIRED', deviceId: msg.deviceId });
+        send(ws, { type: 'PAIR_SUCCESS', deviceId: msg.deviceId });
+        return;
+      }
+
       const allowed = new Set(['PING', 'STATUS', 'RING']);
       if (msg.type === 'COMMAND' && allowed.has(msg.command) && typeof msg.deviceId === 'string' && typeof msg.commandId === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(msg.commandId)) {
         const target = devices.get(msg.deviceId);
