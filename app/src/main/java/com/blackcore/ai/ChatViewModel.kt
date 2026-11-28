@@ -40,12 +40,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val stoppedGenerations = ConcurrentHashMap.newKeySet<Long>()
     private var messageCollection: Job? = null
 
-    private fun readConfig() = AIConfig(
-        prefs.getString("endpoint", AIConfig().endpoint) ?: AIConfig().endpoint,
-        prefs.getString("key", "") ?: "", prefs.getString("model", "") ?: "",
-        prefs.getString("system", AIConfig().systemPrompt) ?: AIConfig().systemPrompt,
-        prefs.getString("provider", "OpenAI") ?: "OpenAI"
-    )
+    private fun readConfig(): AIConfig {
+        val provider = prefs.getString("provider", "OpenAI") ?: "OpenAI"
+        val savedModel = prefs.getString("model", "") ?: ""
+        val endpoint = prefs.getString("endpoint", AIConfig().endpoint) ?: AIConfig().endpoint
+        // Google restricted Gemini 2.5 Flash for new API users; migrate old saved settings.
+        val model = if (provider == "Google Gemini" && savedModel == "gemini-2.5-flash") "gemini-3.8-flash" else savedModel
+        if (model != savedModel) prefs.edit().putString("model", model).apply()
+        return AIConfig(
+            endpoint, prefs.getString("key", "") ?: "", model,
+            prefs.getString("system", AIConfig().systemPrompt) ?: AIConfig().systemPrompt,
+            provider
+        )
+    }
     private val config = readConfig()
     private val _state = MutableStateFlow(ChatState(config=config, configured=config.apiKey.isNotBlank() && config.model.isNotBlank(), model=if(config.apiKey.isNotBlank()) config.provider + " · " + config.model else ""))
     val state: StateFlow<ChatState> = _state.asStateFlow()
@@ -105,7 +112,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         _state.value=_state.value.copy(config=c,configured=c.apiKey.isNotBlank(),model=provider + " · " + model,error=null)
     }
     private fun providerDefaults(provider:String):Pair<String,String> = when(provider) {
-        "Google Gemini" -> "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions" to "gemini-2.5-flash"
+        "Google Gemini" -> "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions" to "gemini-3.8-flash"
         "Anthropic Claude" -> "https://api.anthropic.com/v1/messages" to "claude-haiku-4-5"
         "Groq" -> "https://api.groq.com/openai/v1/chat/completions" to "openai/gpt-oss-120b"
         "OpenRouter" -> "https://openrouter.ai/api/v1/chat/completions" to "google/gemini-2.5-flash"
